@@ -44,12 +44,6 @@ def now_str():
 def norm(x):
     return str(x or "").strip()
 
-def get_unique(df: pd.DataFrame, col: str):
-    if df.empty or col not in df.columns:
-        return []
-    vals = df[col].astype(str).str.strip().unique().tolist()
-    return sorted([v for v in vals if v])
-
 def df_filter(df: pd.DataFrame, **kwargs):
     out = df.copy()
     for k, v in kwargs.items():
@@ -58,14 +52,21 @@ def df_filter(df: pd.DataFrame, **kwargs):
     return out
 
 def explain_api_error(e: APIError) -> str:
-    """
-    Produce a friendly message for the most common gspread API errors.
-    """
     try:
         status = getattr(e.response, "status_code", None)
         text = getattr(e.response, "text", "") or ""
         low = text.lower()
 
+        if status == 429 or "rate" in low or "quota" in low:
+            return (
+                "⚠️ Limite Google Sheets (429) atteinte.\n\n"
+                "✅ هذا صار خاطر كان فما Reads برشا.\n"
+                "الكود هذا صلّحناه باش يخفّف القراءات.\n\n"
+                "جرّب:\n"
+                "1) Reboot app\n"
+                "2) استنى 60 ثانية\n\n"
+                "🧾 Détails: " + text[:350]
+            )
         if status == 403 or "permission" in low or "forbidden" in low:
             return (
                 "❌ Permission refusée (403).\n\n"
@@ -79,8 +80,8 @@ def explain_api_error(e: APIError) -> str:
             return (
                 "❌ Spreadsheet غير موجود (404).\n\n"
                 "✅ الحل:\n"
-                "1) تأكد GSHEET_ID صحيح (من رابط الشيت)\n"
-                "2) تأكد راهو Google Sheet مش ملف Excel\n"
+                "1) تأكد GSHEET_ID صحيح\n"
+                "2) تأكد راهو Google Sheet مش Excel\n"
                 "3) Share للـ service account\n\n"
                 "🧾 Détails: " + text[:350]
             )
@@ -90,7 +91,7 @@ def explain_api_error(e: APIError) -> str:
 
 
 # =========================================================
-# GSHEETS
+# GSHEETS (OPTIMIZED)
 # =========================================================
 @st.cache_resource
 def gs_client():
@@ -102,15 +103,13 @@ def gs_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-def open_spreadsheet():
-    # IMPORTANT: in secrets must be GSHEET_ID
+@st.cache_resource
+def spreadsheet():
+    # open once per session
     sheet_id = st.secrets["GSHEET_ID"]
     return gs_client().open_by_key(sheet_id)
 
 def ensure_ws(sh, title: str):
-    """
-    Ensure worksheet exists. Create if missing.
-    """
     try:
         return sh.worksheet(title)
     except Exception:
@@ -118,39 +117,45 @@ def ensure_ws(sh, title: str):
         return sh.worksheet(title)
 
 def ensure_headers(ws, headers: list[str]):
-    """
-    Ensure first row equals headers. If empty or different, reset to headers.
-    """
-    try:
-        # Safer than row_values when sheet has weird state; still can raise APIError if no access.
-        first_row = ws.get("1:1")[0] if ws.get("1:1") else []
-    except APIError:
-        # propagate to outer handler for friendly message
-        raise
-    except Exception:
-        first_row = ws.row_values(1) if ws.row_count >= 1 else []
+    # SINGLE READ for header row
+    row1 = []
+    rng = ws.get("1:1")  # 1 read
+    if rng and len(rng) > 0:
+        row1 = rng[0]
 
-    first_row = [norm(x) for x in first_row]
-
-    # If worksheet is empty or headers mismatch -> initialize headers
-    if first_row != headers:
+    row1 = [norm(x) for x in row1]
+    if row1 != headers:
         ws.clear()
         ws.append_row(headers, value_input_option="RAW")
 
 def ensure_worksheets_and_headers():
     try:
-        sh = open_spreadsheet()
+        sh = spreadsheet()
+
+        # Get worksheet titles once
+        titles = [w.title for w in sh.worksheets()]
         for ws_name, headers in REQUIRED_SHEETS.items():
-            ws = ensure_ws(sh, ws_name)
+            if ws_name not in titles:
+                sh.add_worksheet(title=ws_name, rows=2000, cols=max(12, len(headers) + 2))
+                titles.append(ws_name)
+
+            ws = sh.worksheet(ws_name)
             ensure_headers(ws, headers)
+
         return sh
     except APIError as e:
         st.error(explain_api_error(e))
         raise
 
-@st.cache_data(ttl=8)
+def ensure_schema_once():
+    if st.session_state.get("schema_ok", False):
+        return
+    ensure_worksheets_and_headers()
+    st.session_state.schema_ok = True
+
+@st.cache_data(ttl=60, show_spinner=False)
 def read_df(ws_name: str) -> pd.DataFrame:
-    sh = open_spreadsheet()
+    sh = spreadsheet()
     ws = sh.worksheet(ws_name)
     values = ws.get_all_values()
     if len(values) <= 1:
@@ -160,7 +165,7 @@ def read_df(ws_name: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=headers)
 
 def append_row(ws_name: str, row: dict):
-    sh = open_spreadsheet()
+    sh = spreadsheet()
     ws = sh.worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
     out = [norm(row.get(h, "")) for h in headers]
@@ -168,7 +173,7 @@ def append_row(ws_name: str, row: dict):
     st.cache_data.clear()
 
 def update_cell(ws_name: str, row_index_1based: int, col_name: str, value):
-    sh = open_spreadsheet()
+    sh = spreadsheet()
     ws = sh.worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
     col_index = headers.index(col_name) + 1
@@ -176,7 +181,7 @@ def update_cell(ws_name: str, row_index_1based: int, col_name: str, value):
     st.cache_data.clear()
 
 def delete_group_timetable(branch: str, program: str, group: str):
-    sh = open_spreadsheet()
+    sh = spreadsheet()
     ws = sh.worksheet("Timetable")
     all_vals = ws.get_all_values()
     if not all_vals:
@@ -194,6 +199,7 @@ def delete_group_timetable(branch: str, program: str, group: str):
 
     for ridx in sorted(to_delete, reverse=True):
         ws.delete_rows(ridx)
+
     st.cache_data.clear()
 
 # =========================================================
@@ -201,7 +207,7 @@ def delete_group_timetable(branch: str, program: str, group: str):
 # =========================================================
 def ensure_session():
     if "role" not in st.session_state:
-        st.session_state.role = None
+        st.session_state.role = None  # "staff" | "student"
     if "user" not in st.session_state:
         st.session_state.user = {}
     if "page" not in st.session_state:
@@ -250,7 +256,7 @@ def page_login():
     st.title("🧩 Portail Mega Formation — Connexion")
 
     branches_df = read_df("Branches")
-    branches = get_unique(branches_df, "branch")
+    branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
 
     c1, c2 = st.columns(2, gap="large")
 
@@ -283,6 +289,7 @@ def page_login():
                 idx = df.index[df["phone"].astype(str).str.strip() == norm(phone)].tolist()
                 if idx:
                     update_cell("Accounts", idx[0] + 2, "last_login", now_str())
+
                 st.session_state.role = "student"
                 st.session_state.user = acc
                 st.session_state.page = "Home"
@@ -440,9 +447,9 @@ def staff_sidebar_controls():
         st.sidebar.divider()
         if st.sidebar.button("Se déconnecter", use_container_width=True):
             logout(); st.rerun()
-        return staff_branch, program, group
+        return
 
-    # Exam types
+    # ExamTypes
     with st.sidebar.expander("🧾 Types d'examen (ExamTypes)", expanded=False):
         et_df = df_filter(read_df("ExamTypes"), branch=staff_branch, program_name=program, group_name=group)
         et_df = et_df[et_df["is_active"].astype(str).str.strip().str.lower() != "false"].copy()
@@ -588,8 +595,6 @@ def staff_sidebar_controls():
     if st.sidebar.button("Se déconnecter", use_container_width=True):
         logout(); st.rerun()
 
-    return staff_branch, program, group
-
 def student_center_view():
     st.markdown("## 🎓 Espace Stagiaire")
     st.caption("Consultation فقط: notes, matières, emploi du temps.")
@@ -678,7 +683,7 @@ def sidebar_nav():
 
 def main():
     ensure_session()
-    ensure_worksheets_and_headers()
+    ensure_schema_once()  # ✅ important: ONLY ONCE
     sidebar_nav()
 
     if st.session_state.page == "Login":
