@@ -737,6 +737,35 @@ def staff_work_center():
                     })
                     st.success("✅ Ajouté.")
                     st.rerun()
+             st.markdown("### 🖼️ Photo de profil (par l'employé)")
+
+cur = df_filter(read_df("Trainees"), branch=staff_branch, program=program, group=group)
+if cur.empty:
+    st.info("Aucun stagiaire dans هذا groupe.")
+else:
+    cur2 = cur.copy()
+    cur2["label"] = cur2["full_name"].astype(str).str.strip() + " — " + cur2["trainee_id"].astype(str).str.strip()
+    chosen = st.selectbox("Choisir un stagiaire", cur2["label"].tolist(), key="pic_tr_choice")
+    trainee_id = cur2[cur2["label"] == chosen].iloc[0]["trainee_id"]
+
+    # preview الحالية
+    old = get_profile_pic_by_trainee(trainee_id)
+    if old:
+        st.image(old, caption="Photo actuelle", width=140)
+
+    up = st.file_uploader("Uploader une photo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="staff_pic_upload")
+    if up is not None:
+        img_bytes = up.read()
+        st.image(img_bytes, caption="Aperçu", width=140)
+
+        if st.button("✅ Enregistrer la photo", use_container_width=True, key="btn_save_staff_pic"):
+            try:
+                upsert_profile_pic_for_trainee(trainee_id, img_bytes)
+                st.success("✅ Photo enregistrée pour ce stagiaire.")
+                st.rerun()
+            except APIError as e:
+                st.error(explain_api_error(e))
+       
 
     # Grades + Timetable (+ download PNG)
     with t6:
@@ -853,3 +882,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
