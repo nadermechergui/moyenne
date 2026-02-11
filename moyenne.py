@@ -1,10 +1,15 @@
 import uuid
+import re
+import base64
+import io
 from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError
+import matplotlib.pyplot as plt
 
 # =========================================================
 # CONFIG
@@ -23,6 +28,9 @@ REQUIRED_SHEETS = {
     "Subjects": ["subject_id", "branch", "program", "group", "subject_name", "is_active", "created_at"],
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group", "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
     "Timetable": ["row_id", "branch", "program", "group", "day", "start", "end", "subject", "room", "teacher", "created_at"],
+
+    # ✅ NEW: student profile picture (stored as base64)
+    "ProfilePics": ["phone", "trainee_id", "image_b64", "uploaded_at"],
 }
 
 DEFAULT_TIMETABLE_ROW = {
@@ -38,11 +46,11 @@ DEFAULT_TIMETABLE_ROW = {
 # =========================================================
 # UTILS
 # =========================================================
-def now_str():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 def norm(x):
     return str(x or "").strip()
+
+def now_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def df_filter(df: pd.DataFrame, **kwargs):
     out = df.copy()
@@ -86,11 +94,62 @@ def explain_api_error(e: APIError) -> str:
     except Exception:
         return "❌ Google API Error (unknown)."
 
-def safe_float(x, default=0.0):
-    try:
-        return float(str(x).replace(",", ".").strip())
-    except Exception:
-        return default
+# ---- smart name matching (order-insensitive) ----
+def tokenize_name(s: str) -> list[str]:
+    s = norm(s).lower()
+    s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
+    parts = [p for p in s.split() if p]
+    parts = [p for p in parts if len(p) > 1]
+    return parts
+
+def name_key(s: str) -> str:
+    toks = sorted(set(tokenize_name(s)))
+    return " ".join(toks)
+
+# ---- timetable to PNG ----
+def table_png_bytes(df: pd.DataFrame, title: str) -> bytes:
+    if df.empty:
+        df = pd.DataFrame([{"Info": "Aucun planning"}])
+
+    show = df.copy()
+
+    # keep only useful columns if present
+    cols_pref = ["day", "start", "end", "subject", "room", "teacher"]
+    cols = [c for c in cols_pref if c in show.columns]
+    if cols:
+        show = show[cols].copy()
+
+    # nicer headers
+    rename = {
+        "day": "Jour",
+        "start": "Début",
+        "end": "Fin",
+        "subject": "Matière",
+        "room": "Salle",
+        "teacher": "Formateur",
+    }
+    show.rename(columns={k: v for k, v in rename.items() if k in show.columns}, inplace=True)
+
+    # draw
+    plt.figure(figsize=(12, 0.55 * (len(show) + 2)))
+    plt.axis("off")
+    plt.title(title, fontsize=14, pad=12)
+
+    tbl = plt.table(
+        cellText=show.values,
+        colLabels=show.columns,
+        cellLoc="center",
+        loc="center",
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    tbl.scale(1, 1.2)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
+    plt.close()
+    buf.seek(0)
+    return buf.read()
 
 # =========================================================
 # GSHEETS (OPTIMIZED)
@@ -114,13 +173,12 @@ def ensure_ws(sh, title: str):
     try:
         return sh.worksheet(title)
     except Exception:
-        sh.add_worksheet(title=title, rows=2000, cols=40)
+        sh.add_worksheet(title=title, rows=2000, cols=60)
         return sh.worksheet(title)
 
 def ensure_headers(ws, headers: list[str]):
-    # single read for row1
     row1 = []
-    rng = ws.get("1:1")
+    rng = ws.get("1:1")  # single read
     if rng and len(rng) > 0:
         row1 = rng[0]
     row1 = [norm(x) for x in row1]
@@ -166,12 +224,31 @@ def append_row(ws_name: str, row: dict):
     ws.append_row(out, value_input_option="USER_ENTERED")
     st.cache_data.clear()
 
-def update_cell(ws_name: str, row_index_1based: int, col_name: str, value):
+def update_row_by_key(ws_name: str, key_col: str, key_val: str, updates: dict) -> bool:
+    """
+    Update first row where key_col == key_val. Returns True if updated.
+    """
+    df = read_df(ws_name)
+    if df.empty or key_col not in df.columns:
+        return False
+
+    key_val = norm(key_val)
+    idxs = df.index[df[key_col].astype(str).str.strip() == key_val].tolist()
+    if not idxs:
+        return False
+
+    row_num = idxs[0] + 2  # header row is 1
     ws = spreadsheet().worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
-    col_index = headers.index(col_name) + 1
-    ws.update_cell(row_index_1based, col_index, value)
+
+    for col_name, val in updates.items():
+        if col_name not in headers:
+            continue
+        col_num = headers.index(col_name) + 1
+        ws.update_cell(row_num, col_num, norm(val))
+
     st.cache_data.clear()
+    return True
 
 def delete_group_timetable(branch: str, program: str, group: str):
     ws = spreadsheet().worksheet("Timetable")
@@ -192,21 +269,21 @@ def delete_group_timetable(branch: str, program: str, group: str):
     st.cache_data.clear()
 
 # =========================================================
-# SESSION / AUTH
+# AUTH / SESSION
 # =========================================================
 def ensure_session():
     if "role" not in st.session_state:
-        st.session_state.role = None  # "staff" | "student"
+        st.session_state.role = None  # "staff" | None
     if "user" not in st.session_state:
         st.session_state.user = {}
+    if "student" not in st.session_state:
+        st.session_state.student = None  # dict of account
     if "page" not in st.session_state:
-        st.session_state.page = "Home"  # Home contains student portal + staff area (if logged)
+        st.session_state.page = "Home"
 
 def logout_staff():
-    # only logs staff out (student session stays separate via account login)
-    if st.session_state.role == "staff":
-        st.session_state.role = None
-        st.session_state.user = {}
+    st.session_state.role = None
+    st.session_state.user = {}
 
 def staff_branch_login(branch: str, branch_password: str):
     df = read_df("Branches")
@@ -261,6 +338,7 @@ def sidebar_staff_login():
 
     branch = st.sidebar.selectbox("Centre", branches, key="sb_staff_branch")
     pwd = st.sidebar.text_input("Mot de passe du centre", type="password", key="sb_staff_pwd")
+
     if st.sidebar.button("Connexion", use_container_width=True):
         user = staff_branch_login(branch, pwd)
         if user:
@@ -270,6 +348,40 @@ def sidebar_staff_login():
             st.rerun()
         else:
             st.sidebar.error("Mot de passe incorrect / centre inactif.")
+
+# =========================================================
+# STUDENT: PROFILE PIC HELPERS
+# =========================================================
+def get_profile_pic_bytes(phone: str) -> bytes | None:
+    df = read_df("ProfilePics")
+    if df.empty:
+        return None
+    m = df[df["phone"].astype(str).str.strip() == norm(phone)].copy()
+    if m.empty:
+        return None
+    b64 = norm(m.iloc[0].get("image_b64"))
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64.encode("utf-8"))
+    except Exception:
+        return None
+
+def upsert_profile_pic(phone: str, trainee_id: str, image_bytes: bytes):
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    updated = update_row_by_key(
+        "ProfilePics",
+        key_col="phone",
+        key_val=phone,
+        updates={"trainee_id": trainee_id, "image_b64": b64, "uploaded_at": now_str()},
+    )
+    if not updated:
+        append_row("ProfilePics", {
+            "phone": norm(phone),
+            "trainee_id": norm(trainee_id),
+            "image_b64": b64,
+            "uploaded_at": now_str()
+        })
 
 # =========================================================
 # STUDENT PORTAL (CENTER)
@@ -284,15 +396,12 @@ def student_portal_center():
         st.subheader("Connexion Stagiaire")
         phone = st.text_input("Téléphone", key="stud_phone")
         pwd = st.text_input("Mot de passe", type="password", key="stud_pwd")
+
         if st.button("Se connecter", use_container_width=True, key="btn_stud_login"):
             acc = student_login(phone, pwd)
             if acc:
                 # update last_login
-                df = read_df("Accounts")
-                idx = df.index[df["phone"].astype(str).str.strip() == norm(phone)].tolist()
-                if idx:
-                    update_cell("Accounts", idx[0] + 2, "last_login", now_str())
-
+                update_row_by_key("Accounts", "phone", phone, {"last_login": now_str()})
                 st.session_state.student = acc
                 st.success("✅ Connexion réussie")
             else:
@@ -303,10 +412,10 @@ def student_portal_center():
             st.success("Déconnecté.")
             st.rerun()
 
-    # -------- Inscription student (branch + name + program + group) --------
+    # -------- Inscription student (branch + program + group + typed name) --------
     with tab2:
         st.subheader("Inscription Stagiaire")
-        st.caption("Choisissez centre + spécialité + groupe (créés par l'employé), ثم اكتب اسمك، Téléphone + Mot de passe.")
+        st.caption("Choisissez centre + spécialité + groupe (créés par l'employé), ثم اكتب اسمك (بالترتيب اللي تحب)، Téléphone + Mot de passe.")
 
         branches_df = read_df("Branches")
         branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
@@ -332,7 +441,7 @@ def student_portal_center():
             return
         g = st.selectbox("Groupe", groups, key="reg_group")
 
-        full_name = st.text_input("Nom & Prénom (écris ton nom)", key="reg_name")
+        full_name = st.text_input("Nom (اكتب اسمك كيف تحب)", key="reg_name")
         phone = st.text_input("Téléphone (unique)", key="reg_phone")
         pwd = st.text_input("Mot de passe", type="password", key="reg_pwd")
 
@@ -354,7 +463,6 @@ def student_portal_center():
                 st.error("Ce téléphone est déjà inscrit.")
                 return
 
-            # find trainee match
             tr = read_df("Trainees")
             if tr.empty:
                 st.error("Aucun stagiaire enregistré par l'employé.")
@@ -366,19 +474,26 @@ def student_portal_center():
             tr2["group"] = tr2["group"].astype(str).str.strip()
             tr2["full_name"] = tr2["full_name"].astype(str).str.strip()
 
-            matches = tr2[
+            typed_key = name_key(full_name_n)
+            tr2["name_key"] = tr2["full_name"].apply(name_key)
+
+            candidates = tr2[
                 (tr2["branch"] == norm(b)) &
                 (tr2["program"] == norm(p)) &
                 (tr2["group"] == norm(g)) &
-                (tr2["full_name"].str.lower() == full_name_n.lower())
+                (tr2["name_key"] == typed_key)
             ].copy()
 
-            if matches.empty:
-                st.error("Nom غير موجود في القائمة متاع المجموعة. كلم الإدارة باش تزيدك في Trainees.")
+            if candidates.empty:
+                st.error("اسمك ما لقيتوش في القائمة متاع المجموعة (حتى مع تبديل الترتيب). كلم الإدارة باش تزيدك.")
                 return
 
-            # if duplicates, pick first (or you can expand selection)
-            trainee_id = matches.iloc[0]["trainee_id"]
+            if len(candidates) > 1:
+                candidates["label"] = candidates["full_name"] + " — " + candidates["trainee_id"].astype(str)
+                chosen = st.selectbox("اختر اسمك من القائمة", candidates["label"].tolist(), key="choose_candidate")
+                trainee_id = candidates[candidates["label"] == chosen].iloc[0]["trainee_id"]
+            else:
+                trainee_id = candidates.iloc[0]["trainee_id"]
 
             append_row("Accounts", {
                 "phone": phone_n,
@@ -387,7 +502,7 @@ def student_portal_center():
                 "created_at": now_str(),
                 "last_login": ""
             })
-            st.success("✅ Compte créé. يمكنك تمشي للـ Connexion.")
+            st.success("✅ Compte créé. امشي لصفحة Connexion.")
 
     # -------- My space --------
     with tab3:
@@ -412,8 +527,26 @@ def student_portal_center():
         group = norm(info.get("group"))
         full_name = norm(info.get("full_name"))
 
-        st.success(f"Bienvenue {full_name} ✅")
-        st.caption(f"Centre: {branch} | Spécialité: {program} | Groupe: {group} | Téléphone: {phone}")
+        # ✅ profile picture
+        pic_bytes = get_profile_pic_bytes(phone)
+        c1, c2 = st.columns([1, 3])
+        with c1:
+            if pic_bytes:
+                st.image(pic_bytes, caption="Photo de profil", use_container_width=True)
+            else:
+                st.info("No photo")
+
+        with c2:
+            st.success(f"Bienvenue {full_name} ✅")
+            st.caption(f"Centre: {branch} | Spécialité: {program} | Groupe: {group} | Téléphone: {phone}")
+
+            up = st.file_uploader("📸 Choisir une photo de profil (PNG/JPG)", type=["png", "jpg", "jpeg"], key="profile_uploader")
+            if up is not None:
+                img_bytes = up.read()
+                if st.button("Enregistrer ma photo", use_container_width=True, key="btn_save_profile_pic"):
+                    upsert_profile_pic(phone, trainee_id, img_bytes)
+                    st.success("✅ Photo enregistrée.")
+                    st.rerun()
 
         t1, t2, t3 = st.tabs(["📝 Notes", "🗓️ Emploi du temps", "📚 Matières"])
 
@@ -457,7 +590,7 @@ def staff_work_center():
     staff_branch = norm(st.session_state.user.get("branch"))
     st.success(f"Centre: {staff_branch}")
 
-    # selections (center)
+    # selections
     prog_df = df_filter(read_df("Programs"), branch=staff_branch)
     prog_df = prog_df[prog_df["is_active"].astype(str).str.strip().str.lower() != "false"].copy()
     programs = sorted([x for x in prog_df["program_name"].astype(str).str.strip().tolist() if x])
@@ -477,9 +610,8 @@ def staff_work_center():
         "🏷️ Spécialités", "👥 Groupes", "🧾 Types d'examen", "📚 Matières", "👤 Stagiaires", "📝 Notes & 🗓️ Planning"
     ])
 
-    # ---- Programs ----
+    # Programs
     with t1:
-        st.subheader("Spécialités (Programs)")
         cur = df_filter(read_df("Programs"), branch=staff_branch)
         st.dataframe(cur[["program_name", "is_active", "created_at"]] if not cur.empty else cur,
                      use_container_width=True, hide_index=True)
@@ -499,9 +631,8 @@ def staff_work_center():
                 st.success("✅ Ajouté.")
                 st.rerun()
 
-    # ---- Groups ----
+    # Groups
     with t2:
-        st.subheader("Groupes (Groups)")
         if not program:
             st.info("اختار Spécialité من فوق.")
         else:
@@ -525,9 +656,8 @@ def staff_work_center():
                     st.success("✅ Ajouté.")
                     st.rerun()
 
-    # ---- ExamTypes ----
+    # ExamTypes
     with t3:
-        st.subheader("Types d'examen (ExamTypes)")
         if not (program and group):
             st.info("اختار Spécialité + Groupe.")
         else:
@@ -552,9 +682,8 @@ def staff_work_center():
                     st.success("✅ Ajouté.")
                     st.rerun()
 
-    # ---- Subjects ----
+    # Subjects
     with t4:
-        st.subheader("Matières (Subjects)")
         if not (program and group):
             st.info("اختار Spécialité + Groupe.")
         else:
@@ -579,9 +708,8 @@ def staff_work_center():
                     st.success("✅ Ajouté.")
                     st.rerun()
 
-    # ---- Trainees ----
+    # Trainees (manual add only — you already have Excel import snippet separately if needed)
     with t5:
-        st.subheader("Stagiaires (Trainees)")
         if not (program and group):
             st.info("اختار Spécialité + Groupe.")
         else:
@@ -610,7 +738,7 @@ def staff_work_center():
                     st.success("✅ Ajouté.")
                     st.rerun()
 
-    # ---- Grades & Timetable ----
+    # Grades + Timetable (+ download PNG)
     with t6:
         st.subheader("Notes (Grades)")
         if not (program and group):
@@ -658,6 +786,7 @@ def staff_work_center():
 
             st.divider()
             st.subheader("Emploi du temps (Timetable)")
+
             tt = df_filter(read_df("Timetable"), branch=staff_branch, program=program, group=group)
             if tt.empty:
                 base = pd.DataFrame([{**DEFAULT_TIMETABLE_ROW, "row_id": f"TT-{uuid.uuid4().hex[:8].upper()}"}])
@@ -666,26 +795,41 @@ def staff_work_center():
 
             edited = st.data_editor(base, use_container_width=True, num_rows="dynamic", key="tt_editor_center")
 
-            if st.button("Sauvegarder emploi du temps", use_container_width=True, key="btn_save_tt_center"):
-                delete_group_timetable(staff_branch, program, group)
-                for _, row in edited.iterrows():
-                    if not norm(row.get("day")):
-                        continue
-                    append_row("Timetable", {
-                        "row_id": norm(row.get("row_id") or f"TT-{uuid.uuid4().hex[:8].upper()}"),
-                        "branch": staff_branch,
-                        "program": norm(program),
-                        "group": norm(group),
-                        "day": norm(row.get("day")),
-                        "start": norm(row.get("start")),
-                        "end": norm(row.get("end")),
-                        "subject": norm(row.get("subject")),
-                        "room": norm(row.get("room")),
-                        "teacher": norm(row.get("teacher")),
-                        "created_at": now_str()
-                    })
-                st.success("✅ Planning sauvegardé.")
-                st.rerun()
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Sauvegarder emploi du temps", use_container_width=True, key="btn_save_tt_center"):
+                    delete_group_timetable(staff_branch, program, group)
+                    for _, row in edited.iterrows():
+                        if not norm(row.get("day")):
+                            continue
+                        append_row("Timetable", {
+                            "row_id": norm(row.get("row_id") or f"TT-{uuid.uuid4().hex[:8].upper()}"),
+                            "branch": staff_branch,
+                            "program": norm(program),
+                            "group": norm(group),
+                            "day": norm(row.get("day")),
+                            "start": norm(row.get("start")),
+                            "end": norm(row.get("end")),
+                            "subject": norm(row.get("subject")),
+                            "room": norm(row.get("room")),
+                            "teacher": norm(row.get("teacher")),
+                            "created_at": now_str()
+                        })
+                    st.success("✅ Planning sauvegardé.")
+                    st.rerun()
+
+            with c2:
+                # current timetable for download
+                tt2 = df_filter(read_df("Timetable"), branch=staff_branch, program=program, group=group)
+                title = f"Planning — {staff_branch} — {program} — {group}"
+                png = table_png_bytes(tt2, title)
+                st.download_button(
+                    "⬇️ Télécharger le planning (PNG)",
+                    data=png,
+                    file_name=f"planning_{staff_branch}_{program}_{group}.png".replace(" ", "_"),
+                    mime="image/png",
+                    use_container_width=True
+                )
 
 # =========================================================
 # MAIN
@@ -694,14 +838,10 @@ def main():
     ensure_session()
     ensure_schema_once()
 
-    # Student session holder
-    if "student" not in st.session_state:
-        st.session_state.student = None
-
-    # Sidebar = staff login only
+    # Sidebar: staff login only
     sidebar_staff_login()
 
-    # Center layout: staff work (if logged) + student portal
+    # Center: staff work (if logged) + student portal
     if st.session_state.role == "staff":
         staff_work_center()
         st.divider()
