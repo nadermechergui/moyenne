@@ -21,13 +21,18 @@ REQUIRED_SHEETS = {
 
     "Programs": ["program_id", "branch", "program_name", "is_active", "created_at"],
     "Groups": ["group_id", "branch", "program_name", "group_name", "is_active", "created_at"],
-    "ExamTypes": ["examtype_id", "branch", "program_name", "group_name", "exam_type", "is_active", "created_at"],
 
     "Trainees": ["trainee_id", "full_name", "phone", "branch", "program", "group", "status", "created_at"],
     "Accounts": ["phone", "password", "trainee_id", "created_at", "last_login"],
     "Subjects": ["subject_id", "branch", "program", "group", "subject_name", "is_active", "created_at"],
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group", "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
+    "ExamTypes": ["examtype_id", "branch", "program_name", "group_name", "exam_type", "is_active", "created_at"],
+
+    # جدول الأوقات كصفوف (اختياري)
     "Timetable": ["row_id", "branch", "program", "group", "day", "start", "end", "subject", "room", "teacher", "created_at"],
+
+    # ✅ صورة جدول الأوقات (key: branch+program+group)
+    "TimetableImages": ["branch", "program", "group", "image_b64", "uploaded_at"],
 
     # ✅ صور البروفيل (key = phone)
     "ProfilePics": ["phone", "trainee_id", "image_b64", "uploaded_at"],
@@ -69,28 +74,23 @@ def explain_api_error(e: APIError) -> str:
             return (
                 "⚠️ Limite Google Sheets (429) atteinte.\n\n"
                 "✅ الحل: اعمل Reboot للتطبيق واستنى دقيقة.\n"
-                "الكود هذا مخفّف القراءات (cache + init مرة برك).\n\n"
-                f"Détails: {text[:350]}"
+                "Détails: " + text[:250]
             )
         if status == 403 or "permission" in low or "forbidden" in low:
             return (
                 "❌ Permission refusée (403).\n\n"
                 "✅ الحل:\n"
-                "1) Google Sheet → Share\n"
-                "2) زِد service account (client_email) كـ Editor\n"
-                "3) Reboot app\n\n"
-                f"Détails: {text[:350]}"
+                "Google Sheet → Share → زِد service account (client_email) كـ Editor → Reboot\n\n"
+                "Détails: " + text[:250]
             )
         if status == 404 or "not found" in low:
             return (
                 "❌ Spreadsheet غير موجود (404).\n\n"
                 "✅ الحل:\n"
-                "1) تأكد GSHEET_ID صحيح\n"
-                "2) لازم يكون Google Sheet (مش Excel)\n"
-                "3) Share للـ service account\n\n"
-                f"Détails: {text[:350]}"
+                "تأكد GSHEET_ID صحيح + Share للـ service account\n\n"
+                "Détails: " + text[:250]
             )
-        return "❌ Google API Error:\n" + (text[:450] if text else str(e))
+        return "❌ Google API Error:\n" + (text[:350] if text else str(e))
     except Exception:
         return "❌ Google API Error (unknown)."
 
@@ -107,12 +107,25 @@ def name_key(s: str) -> str:
     return " ".join(toks)
 
 # ---- image compression to avoid Sheets cell limits ----
-def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 70) -> bytes:
-    im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+def compress_image_bytes(img_bytes: bytes, max_side: int = 900, quality: int = 75) -> bytes:
+    """
+    تصغير + ضغط باش Base64 ما يكبرش برشا.
+    max_side = 900 مناسب لصورة جدول أوقات واضحة.
+    """
+    im = Image.open(io.BytesIO(img_bytes))
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGB")
+    if im.mode == "RGBA":
+        # نحولها RGB بخلفية بيضاء
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        bg.paste(im, mask=im.split()[-1])
+        im = bg
+
     w, h = im.size
     scale = min(max_side / max(w, h), 1.0)
     nw, nh = int(w * scale), int(h * scale)
     im = im.resize((nw, nh))
+
     out = io.BytesIO()
     im.save(out, format="JPEG", quality=quality, optimize=True)
     return out.getvalue()
@@ -135,16 +148,9 @@ def spreadsheet():
     sheet_id = st.secrets["GSHEET_ID"]
     return gs_client().open_by_key(sheet_id)
 
-def ensure_ws(sh, title: str):
-    try:
-        return sh.worksheet(title)
-    except Exception:
-        sh.add_worksheet(title=title, rows=2000, cols=80)
-        return sh.worksheet(title)
-
 def ensure_headers(ws, headers: list[str]):
     row1 = []
-    rng = ws.get("1:1")  # single read
+    rng = ws.get("1:1")
     if rng and len(rng) > 0:
         row1 = rng[0]
     row1 = [norm(x) for x in row1]
@@ -190,18 +196,28 @@ def append_row(ws_name: str, row: dict):
     ws.append_row(out, value_input_option="USER_ENTERED")
     st.cache_data.clear()
 
-def update_row_by_key(ws_name: str, key_col: str, key_val: str, updates: dict) -> bool:
+def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], updates: dict) -> bool:
+    """
+    Update first row where all key_cols == key_vals.
+    """
     df = read_df(ws_name)
-    if df.empty or key_col not in df.columns:
-        return False
-    key_val = norm(key_val)
-    idxs = df.index[df[key_col].astype(str).str.strip() == key_val].tolist()
-    if not idxs:
+    if df.empty:
         return False
 
-    row_num = idxs[0] + 2
+    m = df.copy()
+    for c, v in zip(key_cols, key_vals):
+        if c not in m.columns:
+            return False
+        m = m[m[c].astype(str).str.strip() == norm(v)]
+
+    if m.empty:
+        return False
+
+    idx = m.index[0]
+    row_num = idx + 2
     ws = spreadsheet().worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
+
     for col_name, val in updates.items():
         if col_name not in headers:
             continue
@@ -230,13 +246,13 @@ def delete_group_timetable(branch: str, program: str, group: str):
     st.cache_data.clear()
 
 # =========================================================
-# PROFILE PICS (key = phone) with compression + upsert
+# PROFILE PICS (student uploads)
 # =========================================================
 def get_profile_pic_bytes(phone: str) -> bytes | None:
     df = read_df("ProfilePics")
     if df.empty:
         return None
-    m = df[df["phone"].astype(str).str.strip() == norm(phone)].copy()
+    m = df[df["phone"].astype(str).str.strip() == norm(phone)]
     if m.empty:
         return None
     b64 = norm(m.iloc[0].get("image_b64"))
@@ -248,7 +264,6 @@ def get_profile_pic_bytes(phone: str) -> bytes | None:
         return None
 
 def upsert_profile_pic(phone: str, trainee_id: str, img_bytes: bytes):
-    # ✅ compress to avoid APIError / cell limits
     small = compress_image_bytes(img_bytes, max_side=256, quality=70)
     if len(small) > 80_000:
         small = compress_image_bytes(img_bytes, max_side=200, quality=60)
@@ -257,14 +272,60 @@ def upsert_profile_pic(phone: str, trainee_id: str, img_bytes: bytes):
 
     updated = update_row_by_key(
         "ProfilePics",
-        key_col="phone",
-        key_val=phone,
+        key_cols=["phone"],
+        key_vals=[phone],
         updates={"trainee_id": trainee_id, "image_b64": b64, "uploaded_at": now_str()},
     )
     if not updated:
         append_row("ProfilePics", {
             "phone": norm(phone),
             "trainee_id": norm(trainee_id),
+            "image_b64": b64,
+            "uploaded_at": now_str(),
+        })
+
+# =========================================================
+# TIMETABLE IMAGE (staff uploads)
+# =========================================================
+def get_timetable_image_bytes(branch: str, program: str, group: str) -> bytes | None:
+    df = read_df("TimetableImages")
+    if df.empty:
+        return None
+    m = df[
+        (df["branch"].astype(str).str.strip() == norm(branch)) &
+        (df["program"].astype(str).str.strip() == norm(program)) &
+        (df["group"].astype(str).str.strip() == norm(group))
+    ]
+    if m.empty:
+        return None
+    b64 = norm(m.iloc[0].get("image_b64"))
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64.encode("utf-8"))
+    except Exception:
+        return None
+
+def upsert_timetable_image(branch: str, program: str, group: str, img_bytes: bytes):
+    # ✅ نخليها أكبر من بروفيل باش تبقى واضحة
+    small = compress_image_bytes(img_bytes, max_side=900, quality=75)
+    if len(small) > 250_000:
+        # لو كبيرة برشا، نقص أكثر
+        small = compress_image_bytes(img_bytes, max_side=750, quality=70)
+
+    b64 = base64.b64encode(small).decode("utf-8")
+
+    updated = update_row_by_key(
+        "TimetableImages",
+        key_cols=["branch", "program", "group"],
+        key_vals=[branch, program, group],
+        updates={"image_b64": b64, "uploaded_at": now_str()},
+    )
+    if not updated:
+        append_row("TimetableImages", {
+            "branch": norm(branch),
+            "program": norm(program),
+            "group": norm(group),
             "image_b64": b64,
             "uploaded_at": now_str(),
         })
@@ -279,8 +340,6 @@ def ensure_session():
         st.session_state.user = {}
     if "student" not in st.session_state:
         st.session_state.student = None
-    if "page" not in st.session_state:
-        st.session_state.page = "Home"
 
 def logout_staff():
     st.session_state.role = None
@@ -367,7 +426,7 @@ def student_portal_center():
         if st.button("Se connecter", use_container_width=True, key="btn_stud_login"):
             acc = student_login(phone, pwd)
             if acc:
-                update_row_by_key("Accounts", "phone", phone, {"last_login": now_str()})
+                update_row_by_key("Accounts", ["phone"], [phone], {"last_login": now_str()})
                 st.session_state.student = acc
                 st.success("✅ Connexion réussie")
             else:
@@ -466,7 +525,7 @@ def student_portal_center():
             })
             st.success("✅ Compte créé. امشي لصفحة Connexion.")
 
-    # Mon espace + upload profile picture by student
+    # Mon espace + profile pic upload
     with tab3:
         st.subheader("Mon espace")
         acc = st.session_state.get("student")
@@ -489,7 +548,6 @@ def student_portal_center():
         group = norm(info.get("group"))
         full_name = norm(info.get("full_name"))
 
-        # show pic
         pic = get_profile_pic_bytes(phone)
         c1, c2 = st.columns([1, 3])
         with c1:
@@ -527,18 +585,19 @@ def student_portal_center():
                              use_container_width=True, hide_index=True)
 
         with t2:
-            tt = read_df("Timetable")
-            ttf = df_filter(tt, branch=branch, program=program, group=group) if not tt.empty else pd.DataFrame()
-            if ttf.empty:
-                st.info("Emploi du temps non disponible.")
+            # ✅ هنا نعرض صورة جدول الأوقات (الموظف رفعها)
+            img = get_timetable_image_bytes(branch, program, group)
+            if img:
+                st.image(img, caption="Emploi du temps", use_container_width=True)
+                st.download_button(
+                    "⬇️ Télécharger l'image",
+                    data=img,
+                    file_name=f"planning_{branch}_{program}_{group}.jpg".replace(" ", "_"),
+                    mime="image/jpeg",
+                    use_container_width=True,
+                )
             else:
-                cols = ["day","start","end","subject","room","teacher"]
-                st.dataframe(ttf[cols], use_container_width=True, hide_index=True)
-                # ✅ download CSV for student too
-                csv = ttf[cols].to_csv(index=False).encode("utf-8")
-                st.download_button("⬇️ Télécharger (CSV)", data=csv,
-                                   file_name=f"planning_{branch}_{program}_{group}.csv".replace(" ", "_"),
-                                   mime="text/csv", use_container_width=True)
+                st.info("لا توجد صورة لجدول الأوقات لهذا groupe حاليا. (الموظف لازم يرفعها)")
 
         with t3:
             sub = read_df("Subjects")
@@ -549,7 +608,7 @@ def student_portal_center():
                 st.dataframe(subf[["subject_name"]], use_container_width=True, hide_index=True)
 
 # =========================================================
-# STAFF WORK AREA (CENTER) - minimal essentials
+# STAFF WORK AREA (CENTER)
 # =========================================================
 def staff_work_center():
     st.markdown("## 🛠️ Espace Employé (Gestion)")
@@ -576,9 +635,7 @@ def staff_work_center():
             groups = sorted([x for x in grp_df["group_name"].astype(str).str.strip().tolist() if x])
             group = st.selectbox("Groupe (pour gérer)", groups, key="manage_group") if groups else None
 
-    t1, t2, t3, t4, t5 = st.tabs([
-        "🏷️ Spécialités", "👥 Groupes", "📚 Matières", "👤 Stagiaires", "🗓️ Planning"
-    ])
+    t1, t2, t3, t4, t5 = st.tabs(["🏷️ Spécialités", "👥 Groupes", "📚 Matières", "👤 Stagiaires", "🗓️ Planning (Image)"])
 
     with t1:
         cur = df_filter(read_df("Programs"), branch=staff_branch)
@@ -676,48 +733,30 @@ def staff_work_center():
                     st.rerun()
 
     with t5:
-        st.subheader("Emploi du temps (Timetable)")
+        st.subheader("رفع صورة جدول الأوقات")
         if not (program and group):
             st.info("اختار Spécialité + Groupe.")
-        else:
-            tt = df_filter(read_df("Timetable"), branch=staff_branch, program=program, group=group)
-            if tt.empty:
-                base = pd.DataFrame([{**DEFAULT_TIMETABLE_ROW, "row_id": f"TT-{uuid.uuid4().hex[:8].upper()}"}])
-            else:
-                base = tt[["row_id","day","start","end","subject","room","teacher"]].copy()
+            return
 
-            edited = st.data_editor(base, use_container_width=True, num_rows="dynamic", key="tt_editor_center")
+        st.caption("✅ Upload صورة (PNG/JPG) — وبعدها المتكون يشوفها كصورة في بوابتو.")
 
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Sauvegarder emploi du temps", use_container_width=True):
-                    delete_group_timetable(staff_branch, program, group)
-                    for _, row in edited.iterrows():
-                        if not norm(row.get("day")):
-                            continue
-                        append_row("Timetable", {
-                            "row_id": norm(row.get("row_id") or f"TT-{uuid.uuid4().hex[:8].upper()}"),
-                            "branch": staff_branch,
-                            "program": norm(program),
-                            "group": norm(group),
-                            "day": norm(row.get("day")),
-                            "start": norm(row.get("start")),
-                            "end": norm(row.get("end")),
-                            "subject": norm(row.get("subject")),
-                            "room": norm(row.get("room")),
-                            "teacher": norm(row.get("teacher")),
-                            "created_at": now_str()
-                        })
-                    st.success("✅ Planning sauvegardé.")
+        # preview current
+        old = get_timetable_image_bytes(staff_branch, program, group)
+        if old:
+            st.image(old, caption="الصورة الحالية", use_container_width=True)
+
+        up = st.file_uploader("Uploader l'image du planning", type=["png", "jpg", "jpeg"], key="tt_img_uploader")
+        if up is not None:
+            raw = up.read()
+            st.image(raw, caption="Aperçu قبل الحفظ", use_container_width=True)
+
+            if st.button("✅ Enregistrer l'image", use_container_width=True, key="btn_save_tt_img"):
+                try:
+                    upsert_timetable_image(staff_branch, program, group, raw)
+                    st.success("✅ تم حفظ صورة جدول الأوقات.")
                     st.rerun()
-            with c2:
-                # download CSV
-                tt2 = df_filter(read_df("Timetable"), branch=staff_branch, program=program, group=group)
-                cols = ["day","start","end","subject","room","teacher"]
-                csv = tt2[cols].to_csv(index=False).encode("utf-8") if not tt2.empty else "day,start,end,subject,room,teacher\n".encode("utf-8")
-                st.download_button("⬇️ Télécharger le planning (CSV)", data=csv,
-                                   file_name=f"planning_{staff_branch}_{program}_{group}.csv".replace(" ", "_"),
-                                   mime="text/csv", use_container_width=True)
+                except APIError as e:
+                    st.error(explain_api_error(e))
 
 # =========================================================
 # MAIN
@@ -725,6 +764,7 @@ def staff_work_center():
 def main():
     ensure_session()
     ensure_schema_once()
+
     sidebar_staff_login()
 
     if st.session_state.role == "staff":
