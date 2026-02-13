@@ -116,7 +116,6 @@ def compress_image_bytes(img_bytes: bytes, max_side: int = 900, quality: int = 7
     if im.mode not in ("RGB", "RGBA"):
         im = im.convert("RGB")
     if im.mode == "RGBA":
-        # نحولها RGB بخلفية بيضاء
         bg = Image.new("RGB", im.size, (255, 255, 255))
         bg.paste(im, mask=im.split()[-1])
         im = bg
@@ -174,12 +173,26 @@ def ensure_worksheets_and_headers():
         raise
 
 def ensure_schema_once():
+    """
+    ✅ مهم: ما عادش نعمل init تلقائي (سبب 429)
+    init يصير فقط كي الموظف يضغط زر "Initialiser / Vérifier les Sheets"
+    """
     if st.session_state.get("schema_ok", False):
         return
-    ensure_worksheets_and_headers()
-    st.session_state.schema_ok = True
 
-@st.cache_data(ttl=60, show_spinner=False)
+    if not st.session_state.get("init_schema_now", False):
+        return
+
+    try:
+        ensure_worksheets_and_headers()
+        st.session_state.schema_ok = True
+        st.session_state.init_schema_now = False
+    except APIError as e:
+        st.session_state.init_schema_now = False
+        st.error(explain_api_error(e))
+        raise
+
+@st.cache_data(ttl=300, show_spinner=False)  # ✅ 5 دقائق
 def read_df(ws_name: str) -> pd.DataFrame:
     ws = spreadsheet().worksheet(ws_name)
     values = ws.get_all_values()
@@ -197,9 +210,6 @@ def append_row(ws_name: str, row: dict):
     st.cache_data.clear()
 
 def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], updates: dict) -> bool:
-    """
-    Update first row where all key_cols == key_vals.
-    """
     df = read_df(ws_name)
     if df.empty:
         return False
@@ -307,10 +317,8 @@ def get_timetable_image_bytes(branch: str, program: str, group: str) -> bytes | 
         return None
 
 def upsert_timetable_image(branch: str, program: str, group: str, img_bytes: bytes):
-    # ✅ نخليها أكبر من بروفيل باش تبقى واضحة
     small = compress_image_bytes(img_bytes, max_side=900, quality=75)
     if len(small) > 250_000:
-        # لو كبيرة برشا، نقص أكثر
         small = compress_image_bytes(img_bytes, max_side=750, quality=70)
 
     b64 = base64.b64encode(small).decode("utf-8")
@@ -335,7 +343,7 @@ def upsert_timetable_image(branch: str, program: str, group: str, img_bytes: byt
 # =========================================================
 def ensure_session():
     if "role" not in st.session_state:
-        st.session_state.role = None  # "staff" | None
+        st.session_state.role = None
     if "user" not in st.session_state:
         st.session_state.user = {}
     if "student" not in st.session_state:
@@ -376,7 +384,7 @@ def student_login(phone: str, password: str):
     return m.iloc[0].to_dict()
 
 # =========================================================
-# SIDEBAR: STAFF LOGIN ONLY
+# SIDEBAR: STAFF LOGIN ONLY (+ INIT BUTTON)
 # =========================================================
 def sidebar_staff_login():
     st.sidebar.markdown("## 👨‍💼 Connexion Employé")
@@ -387,6 +395,14 @@ def sidebar_staff_login():
     if st.session_state.role == "staff":
         br = norm(st.session_state.user.get("branch"))
         st.sidebar.success(f"Connecté: {br}")
+
+        # ✅ زر init لتفادي 429
+        st.sidebar.divider()
+        st.sidebar.markdown("### 🧰 Maintenance")
+        if st.sidebar.button("Initialiser / Vérifier les Sheets", use_container_width=True):
+            st.session_state.init_schema_now = True
+            st.rerun()
+
         if st.sidebar.button("Se déconnecter (Employé)", use_container_width=True):
             logout_staff()
             st.rerun()
@@ -417,7 +433,6 @@ def student_portal_center():
 
     tab1, tab2, tab3 = st.tabs(["🔐 Connexion", "🆕 Inscription", "📌 Mon espace"])
 
-    # Connexion
     with tab1:
         st.subheader("Connexion Stagiaire")
         phone = st.text_input("Téléphone", key="stud_phone")
@@ -437,7 +452,6 @@ def student_portal_center():
             st.success("Déconnecté.")
             st.rerun()
 
-    # Inscription (name order-insensitive)
     with tab2:
         st.subheader("Inscription Stagiaire")
 
@@ -525,7 +539,6 @@ def student_portal_center():
             })
             st.success("✅ Compte créé. امشي لصفحة Connexion.")
 
-    # Mon espace + profile pic upload
     with tab3:
         st.subheader("Mon espace")
         acc = st.session_state.get("student")
@@ -585,7 +598,6 @@ def student_portal_center():
                              use_container_width=True, hide_index=True)
 
         with t2:
-            # ✅ هنا نعرض صورة جدول الأوقات (الموظف رفعها)
             img = get_timetable_image_bytes(branch, program, group)
             if img:
                 st.image(img, caption="Emploi du temps", use_container_width=True)
@@ -740,7 +752,6 @@ def staff_work_center():
 
         st.caption("✅ Upload صورة (PNG/JPG) — وبعدها المتكون يشوفها كصورة في بوابتو.")
 
-        # preview current
         old = get_timetable_image_bytes(staff_branch, program, group)
         if old:
             st.image(old, caption="الصورة الحالية", use_container_width=True)
@@ -763,6 +774,8 @@ def staff_work_center():
 # =========================================================
 def main():
     ensure_session()
+
+    # ✅ ما يعملش init تلقائي (يعمل كان بالزر)
     ensure_schema_once()
 
     sidebar_staff_login()
