@@ -9,3 +9,4 @@ reportlab
 matplotlib
 pillow
 openpyxl
+googleapiclient.discovery
