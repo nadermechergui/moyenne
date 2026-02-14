@@ -267,11 +267,12 @@ def get_timetable_image_bytes(branch: str, program: str, group: str) -> bytes | 
     return b64decode_str(m.iloc[0].get("image_b64"))
 
 def upsert_timetable_image(branch: str, program: str, group: str, img_bytes: bytes, staff_name: str = ""):
-    small = compress_image_bytes(img_bytes, max_side=900, quality=75)
-    if len(small) > 250_000:
-        small = compress_image_bytes(img_bytes, max_side=750, quality=70)
+    small = compress_image_bytes(img_bytes, max_side=600, quality=55)
+    if len(small) > 60_000:
+        small = compress_image_bytes(img_bytes, max_side=450, quality=45)
 
-    b64 = b64encode_bytes(small)
+
+    b64 = ensure_cell_safe_b64(small)
 
     updated = update_row_by_key(
         "TimetableImages",
@@ -951,3 +952,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
