@@ -28,24 +28,23 @@ REQUIRED_SHEETS = {
 
     "Trainees": ["trainee_id", "full_name", "phone", "branch", "program", "group", "status", "created_at"],
 
-    # ✅ student_name added
     "Accounts": ["phone", "password", "trainee_id", "student_name", "created_at", "last_login"],
 
     "Subjects": ["subject_id", "branch", "program", "group", "subject_name", "is_active", "created_at"],
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group",
                "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
 
-    # ✅ Planning stored on Drive (no base64)
+    # Drive planning
     "TimetableImages": ["branch", "program", "group", "drive_file_id",
                         "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 
-    # ✅ Profile pics only (small base64)
+    # Profile pics (small base64)
     "ProfilePics": ["phone", "trainee_id", "image_b64", "uploaded_at"],
 
-    # ✅ Payments
+    # Payments
     "Payments": ["payment_id", "trainee_id", "branch", "program", "group", "year"] + MONTHS + ["updated_at", "staff_name"],
 
-    # ✅ Course supports on Drive (no base64)
+    # Course supports on Drive
     "CourseFiles": ["file_id", "branch", "program", "group", "subject_name", "file_name", "mime_type",
                     "drive_file_id", "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 }
@@ -72,17 +71,24 @@ def explain_api_error(e: APIError) -> str:
         text = getattr(e.response, "text", "") or ""
         low = text.lower()
         if status == 429 or "quota" in low:
-            return "⚠️ 429 Quota. اعمل Reboot واستنى شوية.\n" + text[:220]
+            return "⚠️ 429 Quota. اعمل Reboot واستنى شوية.\n" + text[:240]
         if status == 403 or "permission" in low or "forbidden" in low:
-            return "❌ 403 Permission. Share Sheet/Folder مع service account.\n" + text[:220]
+            return "❌ 403 Permission. Share Sheet/Folder مع service account.\n" + text[:240]
         if status == 404 or "not found" in low:
-            return "❌ 404 Not found. تأكد GSHEET_ID صحيح + Share للـ service account.\n" + text[:220]
-        return "❌ Google API Error:\n" + (text[:320] if text else str(e))
+            return "❌ 404 Not found. تأكد GSHEET_ID صحيح + Share للـ service account.\n" + text[:240]
+        return "❌ Google API Error:\n" + (text[:360] if text else str(e))
     except Exception:
         return "❌ Google API Error."
 
+def http_error_text(e: Exception) -> str:
+    if isinstance(e, HttpError):
+        try:
+            return e.content.decode("utf-8")[:1200]
+        except Exception:
+            return str(e)
+    return str(e)
+
 def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 70) -> bytes:
-    """For PROFILE pics only"""
     im = Image.open(io.BytesIO(img_bytes))
     if im.mode not in ("RGB", "RGBA"):
         im = im.convert("RGB")
@@ -97,14 +103,6 @@ def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 7
     out = io.BytesIO()
     im.save(out, format="JPEG", quality=quality, optimize=True)
     return out.getvalue()
-
-def http_error_text(e: Exception) -> str:
-    if isinstance(e, HttpError):
-        try:
-            return e.content.decode("utf-8")[:1200]
-        except Exception:
-            return str(e)
-    return str(e)
 
 # =========================================================
 # AUTH CLIENTS
@@ -131,7 +129,7 @@ def drive_service():
     return build("drive", "v3", credentials=creds(), cache_discovery=False)
 
 # =========================================================
-# SHEETS SETUP (SAFE: no clear)
+# SHEETS SETUP (SAFE)
 # =========================================================
 def ensure_headers_safe(ws, headers: list[str]):
     rng = ws.get("1:1")
@@ -215,37 +213,43 @@ def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], up
     return True
 
 # =========================================================
-# DRIVE UPLOAD (100% Drive)
+# DRIVE (Shared Drive ready)
 # =========================================================
 def drive_check_folder(folder_id: str):
-    """Shows if folder is accessible and is really a folder."""
     svc = drive_service()
     try:
-        meta = svc.files().get(fileId=folder_id, fields="id,name,mimeType").execute()
+        meta = svc.files().get(
+            fileId=folder_id,
+            fields="id,name,mimeType,driveId",
+            supportsAllDrives=True
+        ).execute()
         if meta.get("mimeType") != "application/vnd.google-apps.folder":
             st.error(f"❌ هذا موش Folder ID. mimeType={meta.get('mimeType')}")
         else:
-            st.success(f"✅ Drive folder OK: {meta.get('name')}")
+            st.success(f"✅ Folder OK: {meta.get('name')}")
     except Exception as e:
-        st.error("❌ Folder access error: " + http_error_text(e))
+        st.error("❌ Drive folder error: " + http_error_text(e))
         raise
 
 def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder_id: str) -> tuple[str, str, str]:
-    """
-    Returns: (file_id, view_url, download_url)
-    Shows real error if HttpError.
-    """
     svc = drive_service()
     media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=False)
     meta = {"name": file_name, "parents": [folder_id]}
     try:
-        created = svc.files().create(body=meta, media_body=media, fields="id").execute()
+        created = svc.files().create(
+            body=meta,
+            media_body=media,
+            fields="id",
+            supportsAllDrives=True
+        ).execute()
         file_id = created["id"]
 
+        # may fail if shared drive blocks public sharing
         svc.permissions().create(
             fileId=file_id,
             body={"type": "anyone", "role": "reader"},
             fields="id",
+            supportsAllDrives=True
         ).execute()
 
         view_url = f"https://drive.google.com/file/d/{file_id}/view"
@@ -253,11 +257,11 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
         return file_id, view_url, download_url
 
     except Exception as e:
-        st.error("Drive Error: " + http_error_text(e))
+        st.error("❌ Drive upload error: " + http_error_text(e))
         raise
 
 # =========================================================
-# PROFILE PICS (small base64)
+# PROFILE PICS
 # =========================================================
 def get_profile_pic_bytes(phone: str) -> bytes | None:
     df = read_df("ProfilePics")
@@ -341,7 +345,7 @@ def set_payment_month(trainee_id: str, year: str, month: str, paid: bool, staff_
 # AUTH / SESSION
 # =========================================================
 def ensure_session():
-    st.session_state.setdefault("role", None)  # staff | None
+    st.session_state.setdefault("role", None)
     st.session_state.setdefault("user", {})
     st.session_state.setdefault("student", None)
 
@@ -353,16 +357,13 @@ def staff_branch_login(branch: str, branch_password: str):
     df = read_df("Branches")
     if df.empty:
         return None
-
     df2 = df.copy()
     df2["branch"] = df2["branch"].astype(str).str.strip()
     df2["staff_password"] = df2["staff_password"].astype(str).str.strip()
     df2["is_active"] = df2["is_active"].astype(str).str.strip().str.lower()
-
     m = df2[(df2["branch"] == norm(branch)) &
             (df2["staff_password"] == norm(branch_password)) &
             (df2["is_active"] != "false")]
-
     if m.empty:
         return None
     return {"branch": norm(branch), "role": "staff"}
@@ -380,11 +381,10 @@ def student_login(phone: str, password: str):
     return m.iloc[0].to_dict()
 
 # =========================================================
-# SIDEBAR: STAFF LOGIN ONLY
+# SIDEBAR
 # =========================================================
 def sidebar_staff_login():
     st.sidebar.markdown("## 👨‍💼 Connexion Employé")
-
     branches_df = read_df("Branches")
     branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
 
@@ -407,8 +407,8 @@ def sidebar_staff_login():
         st.sidebar.warning("Branches vide. Ajoutez centres + mots de passe.")
         return
 
-    branch = st.sidebar.selectbox("Centre", branches, key="sb_staff_branch")
-    pwd = st.sidebar.text_input("Mot de passe du centre", type="password", key="sb_staff_pwd")
+    branch = st.sidebar.selectbox("Centre", branches)
+    pwd = st.sidebar.text_input("Mot de passe du centre", type="password")
 
     if st.sidebar.button("Connexion", use_container_width=True):
         user = staff_branch_login(branch, pwd)
@@ -427,12 +427,10 @@ def student_portal_center():
     st.markdown("## 🎓 Espace Stagiaire")
     tab1, tab2, tab3 = st.tabs(["🔐 Connexion", "🆕 Inscription", "📌 Mon espace"])
 
-    # Login
     with tab1:
         phone = st.text_input("Téléphone", key="stud_phone")
         pwd = st.text_input("Mot de passe", type="password", key="stud_pwd")
-
-        if st.button("Se connecter", use_container_width=True):
+        if st.button("Se connecter", use_container_width=True, key="btn_login"):
             acc = student_login(phone, pwd)
             if acc:
                 update_row_by_key("Accounts", ["phone"], [phone], {"last_login": now_str()})
@@ -440,20 +438,17 @@ def student_portal_center():
                 st.success("✅ Connexion réussie")
             else:
                 st.error("Téléphone / mot de passe incorrect.")
-
-        if st.button("Se déconnecter (Stagiaire)", use_container_width=True):
+        if st.button("Se déconnecter", use_container_width=True, key="btn_logout"):
             st.session_state.student = None
             st.rerun()
 
-    # Registration (name free, phone must exist in Trainees)
     with tab2:
         st.subheader("Inscription (Nom libre + Téléphone لازم يكون مسجّل عند الإدارة)")
         branches_df = read_df("Branches")
         branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
         if not branches:
-            st.warning("Aucun centre disponible.")
+            st.warning("Aucun centre.")
             return
-
         b = st.selectbox("Centre", branches, key="reg_branch")
 
         prog_df = df_filter(read_df("Programs"), branch=b)
@@ -462,7 +457,7 @@ def student_portal_center():
         if not programs:
             st.warning("Aucune spécialité.")
             return
-        p = st.selectbox("Spécialité", programs, key="reg_program")
+        p = st.selectbox("Spécialité", programs, key="reg_prog")
 
         grp_df = df_filter(read_df("Groups"), branch=b, program_name=p)
         grp_df = grp_df[grp_df["is_active"].astype(str).str.strip().str.lower() != "false"].copy()
@@ -472,9 +467,9 @@ def student_portal_center():
             return
         g = st.selectbox("Groupe", groups, key="reg_group")
 
-        student_name = st.text_input("Nom (أي اسم تحب)", key="reg_name_free")
-        phone = st.text_input("Téléphone (نفس رقمك عند الإدارة)", key="reg_phone")
-        pwd = st.text_input("Mot de passe", type="password", key="reg_pwd")
+        student_name = st.text_input("Nom (أي اسم تحب)")
+        phone = st.text_input("Téléphone (نفس رقمك عند الإدارة)")
+        pwd = st.text_input("Mot de passe", type="password")
 
         if st.button("Créer mon compte", use_container_width=True, key="btn_register"):
             if not norm(student_name) or not norm(phone) or not norm(pwd):
@@ -491,7 +486,7 @@ def student_portal_center():
 
             tr = read_df("Trainees")
             if tr.empty:
-                st.error("Aucun stagiaire enregistré par l'employé.")
+                st.error("Aucun stagiaire.")
                 return
 
             tr2 = tr.copy()
@@ -502,7 +497,6 @@ def student_portal_center():
                              (tr2["program"] == norm(p)) &
                              (tr2["group"] == norm(g)) &
                              (tr2["phone"] == norm(phone))]
-
             if candidates.empty:
                 st.error("رقم الهاتف موش موجود في Trainees. الموظف لازم يسجل نفس الرقم.")
                 return
@@ -517,13 +511,12 @@ def student_portal_center():
                 "created_at": now_str(),
                 "last_login": ""
             })
-            st.success("✅ Compte créé. امشي لصفحة Connexion.")
+            st.success("✅ Compte créé. امشي Connexion.")
 
-    # My space
     with tab3:
         acc = st.session_state.get("student")
         if not acc:
-            st.info("اعمل Connexion باش تشوف النوطات والدفوعات والملفات.")
+            st.info("اعمل Connexion.")
             return
 
         trainee_id = norm(acc.get("trainee_id"))
@@ -553,11 +546,11 @@ def student_portal_center():
             st.success(f"Bienvenue {student_name or norm(info.get('full_name'))} ✅")
             st.caption(f"Centre: {branch} | Spécialité: {program} | Groupe: {group} | Tél: {phone}")
 
-            up = st.file_uploader("📸 Ajouter/Changer ma photo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+            up = st.file_uploader("📸 Ajouter/Changer ma photo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="pp")
             if up is not None:
                 img_bytes = up.read()
                 st.image(img_bytes, caption="Aperçu", width=150)
-                if st.button("Enregistrer ma photo", use_container_width=True):
+                if st.button("Enregistrer ma photo", use_container_width=True, key="savepp"):
                     upsert_profile_pic(phone, trainee_id, img_bytes)
                     st.success("✅ Photo enregistrée.")
                     st.rerun()
@@ -580,7 +573,7 @@ def student_portal_center():
                    (tt["program"].astype(str).str.strip() == program) &
                    (tt["group"].astype(str).str.strip() == group)] if not tt.empty else pd.DataFrame()
             if m.empty:
-                st.info("لا توجد صورة Planning لهذا groupe.")
+                st.info("لا توجد Planning.")
             else:
                 st.markdown(f"**View:** {norm(m.iloc[0].get('drive_view_url'))}")
                 st.markdown(f"**Download:** {norm(m.iloc[0].get('drive_download_url'))}")
@@ -591,7 +584,7 @@ def student_portal_center():
             m = pay[(pay["trainee_id"].astype(str).str.strip() == trainee_id) &
                     (pay["year"].astype(str).str.strip() == year)] if not pay.empty else pd.DataFrame()
             if m.empty:
-                st.info("لا توجد بيانات دفوعات (الموظف يعملها).")
+                st.info("لا توجد بيانات دفوعات.")
             else:
                 rowp = m.iloc[0].to_dict()
                 show = {mo: (norm(rowp.get(mo)).upper() == "TRUE") for mo in MONTHS}
@@ -617,7 +610,6 @@ def student_portal_center():
 # =========================================================
 def staff_work_center():
     st.markdown("## 🛠️ Espace Employé")
-
     if st.session_state.role != "staff":
         st.info("Connexion Employé من اليسار.")
         return
@@ -625,7 +617,6 @@ def staff_work_center():
     staff_branch = norm(st.session_state.user.get("branch"))
     staff_name = f"Staff-{staff_branch}"
 
-    # Select program/group
     prog_df = df_filter(read_df("Programs"), branch=staff_branch)
     prog_df = prog_df[prog_df["is_active"].astype(str).str.strip().str.lower() != "false"].copy()
     programs = sorted([x for x in prog_df["program_name"].astype(str).str.strip().tolist() if x])
@@ -643,89 +634,23 @@ def staff_work_center():
     with colC:
         year = st.selectbox("Année", [str(datetime.now().year), str(datetime.now().year + 1), str(datetime.now().year - 1)], key="pay_year")
 
-    tab_setup, tab_stag, tab_grades, tab_pay, tab_plan, tab_sup = st.tabs(
-        ["⚙️ Setup", "👤 Stagiaires", "📝 Notes", "💳 Paiements", "🗓️ Planning (Drive)", "📎 Supports (Drive)"]
+    tab_stag, tab_gr, tab_pay, tab_plan, tab_sup = st.tabs(
+        ["👤 Stagiaires", "📝 Notes", "💳 Paiements", "🗓️ Planning (Drive)", "📎 Supports (Drive)"]
     )
 
-    with tab_setup:
-        st.subheader("Branches / Spécialités / Groupes / Matières")
-        st.info("✅ هنا الموظف يضيف Spécialités و Groupes و Matières للفرع متاعو.")
-
-        st.markdown("### ➕ Ajouter Spécialité")
-        new_prog = st.text_input("Nom spécialité", key="new_prog")
-        if st.button("Ajouter spécialité", use_container_width=True):
-            if not norm(new_prog):
-                st.error("Nom obligatoire.")
-            else:
-                append_row("Programs", {
-                    "program_id": f"PR-{uuid.uuid4().hex[:8].upper()}",
-                    "branch": staff_branch,
-                    "program_name": norm(new_prog),
-                    "is_active": "true",
-                    "created_at": now_str(),
-                })
-                st.success("✅ Ajouté.")
-                st.rerun()
-
-        st.divider()
-
-        st.markdown("### ➕ Ajouter Groupe")
-        if not program:
-            st.warning("اختار spécialité من فوق (main).")
-        else:
-            new_group = st.text_input("Nom groupe", key="new_group")
-            if st.button("Ajouter groupe", use_container_width=True):
-                if not norm(new_group):
-                    st.error("Nom obligatoire.")
-                else:
-                    append_row("Groups", {
-                        "group_id": f"GP-{uuid.uuid4().hex[:8].upper()}",
-                        "branch": staff_branch,
-                        "program_name": norm(program),
-                        "group_name": norm(new_group),
-                        "is_active": "true",
-                        "created_at": now_str(),
-                    })
-                    st.success("✅ Ajouté.")
-                    st.rerun()
-
-        st.divider()
-
-        st.markdown("### ➕ Ajouter Matière")
-        if not (program and group):
-            st.warning("اختار spécialité + groupe.")
-        else:
-            sub_name = st.text_input("Nom matière", key="new_subject")
-            if st.button("Ajouter matière", use_container_width=True):
-                if not norm(sub_name):
-                    st.error("Nom obligatoire.")
-                else:
-                    append_row("Subjects", {
-                        "subject_id": f"SB-{uuid.uuid4().hex[:8].upper()}",
-                        "branch": staff_branch,
-                        "program": norm(program),
-                        "group": norm(group),
-                        "subject_name": norm(sub_name),
-                        "is_active": "true",
-                        "created_at": now_str(),
-                    })
-                    st.success("✅ Ajouté.")
-                    st.rerun()
-
     with tab_stag:
-        st.subheader("👤 Gestion Stagiaires")
         if not (program and group):
-            st.info("اختار Spécialité + Groupe.")
+            st.info("اختار spécialité + groupe.")
         else:
             cur = df_filter(read_df("Trainees"), branch=staff_branch, program=program, group=group)
             st.dataframe(cur[["full_name", "phone", "status", "created_at"]] if not cur.empty else cur,
                          use_container_width=True, hide_index=True)
 
-            st.markdown("### ➕ Ajouter stagiaire (Téléphone obligatoire)")
-            name = st.text_input("Nom administratif", key="add_tr_name")
+            st.markdown("### ➕ Ajouter stagiaire")
+            name = st.text_input("Nom", key="add_tr_name")
             phone = st.text_input("Téléphone", key="add_tr_phone")
             status = st.selectbox("Statut", ["active", "inactive"], key="add_tr_status")
-            if st.button("Enregistrer stagiaire", use_container_width=True):
+            if st.button("Enregistrer", use_container_width=True):
                 if not norm(name) or not norm(phone):
                     st.error("Nom + téléphone obligatoire.")
                 else:
@@ -743,22 +668,21 @@ def staff_work_center():
                     st.rerun()
 
             st.divider()
-            st.markdown("### 📥 Import Excel (Trainees)")
-            st.caption("Excel لازم فيه أعمدة: full_name, phone (والباقي يتاخذ من الاختيار فوق)")
+            st.markdown("### 📥 Import Excel (xlsx) : full_name + phone")
             up = st.file_uploader("Uploader Excel", type=["xlsx"], key="excel_tr")
             if up is not None:
                 df = pd.read_excel(up)
                 df.columns = [c.strip() for c in df.columns]
                 st.dataframe(df.head(20), use_container_width=True)
 
-                if st.button("✅ Importer maintenant", use_container_width=True):
+                if st.button("✅ Importer maintenant", use_container_width=True, key="do_imp"):
                     if "full_name" not in df.columns or "phone" not in df.columns:
-                        st.error("لازم full_name و phone في ملف Excel.")
+                        st.error("لازم full_name و phone.")
                     else:
-                        count = 0
                         existing = df_filter(read_df("Trainees"), branch=staff_branch, program=program, group=group)
                         existing_phones = set(existing["phone"].astype(str).str.strip().tolist()) if not existing.empty else set()
 
+                        count = 0
                         for _, r in df.iterrows():
                             fn = norm(r.get("full_name"))
                             ph = norm(r.get("phone"))
@@ -778,34 +702,32 @@ def staff_work_center():
                             })
                             existing_phones.add(ph)
                             count += 1
-
-                        st.success(f"✅ Import terminé: {count} ajoutés.")
+                        st.success(f"✅ Import terminé: {count}")
                         st.rerun()
 
-    with tab_grades:
-        st.subheader("📝 Saisie des notes")
+    with tab_gr:
         if not (program and group):
-            st.info("اختار Spécialité + Groupe.")
+            st.info("اختار spécialité + groupe.")
         else:
             tr = df_filter(read_df("Trainees"), branch=staff_branch, program=program, group=group)
             sub = df_filter(read_df("Subjects"), branch=staff_branch, program=program, group=group)
 
             if tr.empty:
-                st.warning("ما فماش stagiaires.")
+                st.warning("لا يوجد stagiaires.")
             elif sub.empty:
                 st.warning("زيد matières قبل.")
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key="gr_tr")
+                chosen = st.selectbox("Stagiaire", tr["label"].tolist())
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x])
-                subject_name = st.selectbox("Matière", subjects, key="gr_subj")
-                exam_type = st.text_input("Type examen (ex: DS1, TP, Examen...)", key="gr_type")
-                score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25, key="gr_score")
-                date = st.date_input("Date", value=datetime.now().date(), key="gr_date")
-                note = st.text_area("Remarque (optionnel)", key="gr_note")
+                subject_name = st.selectbox("Matière", subjects)
+                exam_type = st.text_input("Type examen (DS1/TP/Examen...)")
+                score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25)
+                date = st.date_input("Date", value=datetime.now().date())
+                note = st.text_area("Remarque")
 
                 if st.button("✅ Enregistrer la note", use_container_width=True):
                     if not norm(exam_type):
@@ -829,9 +751,8 @@ def staff_work_center():
                         st.rerun()
 
     with tab_pay:
-        st.subheader("💳 Paiements (Jan → Dec)")
         if not (program and group):
-            st.info("اختار Spécialité + Groupe.")
+            st.info("اختار spécialité + groupe.")
         else:
             tr = df_filter(read_df("Trainees"), branch=staff_branch, program=program, group=group)
             if tr.empty:
@@ -839,7 +760,7 @@ def staff_work_center():
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist(), key="pay_choose")
+                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist())
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 ensure_payment_row(trainee_id, staff_branch, program, group, year, staff_name)
@@ -859,19 +780,11 @@ def staff_work_center():
                             st.rerun()
 
     with tab_plan:
-        st.subheader("🗓️ Upload Planning (Image) إلى Google Drive")
         if not (program and group):
-            st.info("اختار Spécialité + Groupe.")
+            st.info("اختار spécialité + groupe.")
         else:
             folder_id = st.secrets["DRIVE_FOLDER_ID"]
             drive_check_folder(folder_id)
-
-            tt = read_df("TimetableImages")
-            m = tt[(tt["branch"].astype(str).str.strip() == staff_branch) &
-                   (tt["program"].astype(str).str.strip() == norm(program)) &
-                   (tt["group"].astype(str).str.strip() == norm(group))] if not tt.empty else pd.DataFrame()
-            if not m.empty:
-                st.info(f"Planning موجود: {norm(m.iloc[0].get('drive_view_url'))}")
 
             up = st.file_uploader("Uploader Planning (PNG/JPG)", type=["png", "jpg", "jpeg"], key="planning_upl")
             if up is not None:
@@ -907,20 +820,18 @@ def staff_work_center():
                     st.rerun()
 
     with tab_sup:
-        st.subheader("📎 Upload Supports de cours إلى Google Drive")
         if not (program and group):
-            st.info("اختار Spécialité + Groupe.")
+            st.info("اختار spécialité + groupe.")
         else:
             folder_id = st.secrets["DRIVE_FOLDER_ID"]
             drive_check_folder(folder_id)
 
             sub = df_filter(read_df("Subjects"), branch=staff_branch, program=program, group=group)
             subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x]) if not sub.empty else []
-
             if not subjects:
                 st.warning("زيد matières قبل رفع الملفات.")
             else:
-                subj = st.selectbox("Matière", subjects, key="cf_subject")
+                subj = st.selectbox("Matière", subjects)
                 up = st.file_uploader("Uploader fichier (PDF/DOCX/IMG...)", key="cf_file")
                 if up is not None and st.button("✅ Enregistrer fichier", use_container_width=True):
                     raw = up.read()
@@ -942,19 +853,6 @@ def staff_work_center():
                     })
                     st.success("✅ Fichier enregistré.")
                     st.rerun()
-
-            st.divider()
-            st.markdown("### 📚 Fichiers existants (ce groupe)")
-            files = read_df("CourseFiles")
-            files = files[(files["branch"].astype(str).str.strip() == staff_branch) &
-                          (files["program"].astype(str).str.strip() == norm(program)) &
-                          (files["group"].astype(str).str.strip() == norm(group))] if not files.empty else pd.DataFrame()
-            if files.empty:
-                st.info("لا توجد ملفات.")
-            else:
-                files = files.sort_values(by=["uploaded_at"], ascending=False)
-                st.dataframe(files[["subject_name", "file_name", "uploaded_at", "staff_name"]],
-                             use_container_width=True, hide_index=True)
 
 # =========================================================
 # MAIN
