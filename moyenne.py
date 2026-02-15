@@ -227,20 +227,22 @@ def drive_check_folder(folder_id: str):
         st.error("❌ Drive folder error: " + http_error_text(e))
         raise
 
-def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder_id: str) -> tuple[str, str, str]:
+def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder_id: str):
     svc = drive_service()
     media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=False)
     meta = {"name": file_name, "parents": [folder_id]}
-    try:
-        created = svc.files().create(
-            body=meta,
-            media_body=media,
-            fields="id",
-            supportsAllDrives=True
-        ).execute()
-        file_id = created["id"]
 
-     try:
+    created = svc.files().create(
+        body=meta,
+        media_body=media,
+        fields="id",
+        supportsAllDrives=True
+    ).execute()
+
+    file_id = created["id"]
+
+    # ---- permission (optional)
+    try:
         svc.permissions().create(
             fileId=file_id,
             body={"type": "anyone", "role": "reader"},
@@ -250,9 +252,10 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
     except Exception:
         pass
 
-        view_url = f"https://drive.google.com/file/d/{file_id}/view"
-        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        return file_id, view_url, download_url
+    view_url = f"https://drive.google.com/file/d/{file_id}/view"
+    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+    return file_id, view_url, download_url
 
     except Exception as e:
         st.error("❌ Drive upload error: " + http_error_text(e))
@@ -898,6 +901,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
