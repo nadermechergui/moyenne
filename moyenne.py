@@ -1,3 +1,10 @@
+# ===========================
+# Mega Formation — Portail (Final) ✅
+# Staff (sidebar left) + Student (center)
+# Google Sheets + Google Drive (Shared Drives ready)
+# Payments (Jan→Dec) + Planning upload + Course supports upload + Grades + Profile pic
+# ===========================
+
 import uuid
 import base64
 import io
@@ -34,13 +41,17 @@ REQUIRED_SHEETS = {
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group",
                "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
 
+    # Drive planning
     "TimetableImages": ["branch", "program", "group", "drive_file_id",
                         "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 
+    # Profile pics (small base64 only)
     "ProfilePics": ["phone", "trainee_id", "image_b64", "uploaded_at"],
 
+    # Payments
     "Payments": ["payment_id", "trainee_id", "branch", "program", "group", "year"] + MONTHS + ["updated_at", "staff_name"],
 
+    # Course supports on Drive
     "CourseFiles": ["file_id", "branch", "program", "group", "subject_name", "file_name", "mime_type",
                     "drive_file_id", "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 }
@@ -61,20 +72,20 @@ def df_filter(df: pd.DataFrame, **kwargs):
             out = out[out[k].astype(str).str.strip() == norm(v)]
     return out
 
-def explain_api_error(e: APIError) -> str:
+def explain_gspread_error(e: APIError) -> str:
     try:
         status = getattr(e.response, "status_code", None)
         text = getattr(e.response, "text", "") or ""
         low = text.lower()
-        if status == 429 or "quota" in low:
-            return "⚠️ 429 Quota. اعمل Reboot واستنى شوية.\n" + text[:240]
+        if status == 429 or "quota" in low or "rate" in low:
+            return "⚠️ Google Sheets quota (429). اعمل Reboot واستنى دقيقة.\n" + text[:280]
         if status == 403 or "permission" in low or "forbidden" in low:
-            return "❌ 403 Permission. Share Sheet/Folder مع service account.\n" + text[:240]
+            return "❌ Sheets permission (403). اعمل Share للـSheet للـService Account كـ Editor.\n" + text[:280]
         if status == 404 or "not found" in low:
-            return "❌ 404 Not found. تأكد GSHEET_ID صحيح + Share للـ service account.\n" + text[:240]
-        return "❌ Google API Error:\n" + (text[:360] if text else str(e))
+            return "❌ Sheet not found (404). تأكد GSHEET_ID صحيح.\n" + text[:280]
+        return "❌ Google Sheets error:\n" + (text[:400] if text else str(e))
     except Exception:
-        return "❌ Google API Error."
+        return "❌ Google Sheets error."
 
 def http_error_text(e: Exception) -> str:
     if isinstance(e, HttpError):
@@ -84,7 +95,7 @@ def http_error_text(e: Exception) -> str:
             return str(e)
     return str(e)
 
-def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 70) -> bytes:
+def compress_profile_image(img_bytes: bytes, max_side: int = 256, quality: int = 70) -> bytes:
     im = Image.open(io.BytesIO(img_bytes))
     if im.mode not in ("RGB", "RGBA"):
         im = im.convert("RGB")
@@ -92,10 +103,12 @@ def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 7
         bg = Image.new("RGB", im.size, (255, 255, 255))
         bg.paste(im, mask=im.split()[-1])
         im = bg
+
     w, h = im.size
     scale = min(max_side / max(w, h), 1.0)
     nw, nh = int(w * scale), int(h * scale)
     im = im.resize((nw, nh))
+
     out = io.BytesIO()
     im.save(out, format="JPEG", quality=quality, optimize=True)
     return out.getvalue()
@@ -105,6 +118,7 @@ def compress_image_bytes(img_bytes: bytes, max_side: int = 256, quality: int = 7
 # =========================================================
 @st.cache_resource
 def creds():
+    # NOTE: secrets must contain [gcp_service_account] dict
     creds_dict = st.secrets["gcp_service_account"]
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -125,17 +139,19 @@ def drive_service():
     return build("drive", "v3", credentials=creds(), cache_discovery=False)
 
 # =========================================================
-# SHEETS SETUP (SAFE)
+# SHEETS SETUP (SAFE: no clear / no delete)
 # =========================================================
 def ensure_headers_safe(ws, headers: list[str]):
     rng = ws.get("1:1")
     row1 = rng[0] if (rng and len(rng) > 0) else []
     row1 = [norm(x) for x in row1]
 
+    # If empty header -> write
     if len(row1) == 0 or all(x == "" for x in row1):
         ws.append_row(headers, value_input_option="RAW")
         return
 
+    # If mismatch -> warning only
     if row1 != headers:
         st.warning(f"⚠️ Sheet '{ws.title}' headers مختلفة. ما عملتش مسح. صحّح الهيدرز يدويًا إذا تحب.")
 
@@ -150,6 +166,7 @@ def ensure_worksheets_and_headers():
         ensure_headers_safe(ws, headers)
 
 def ensure_schema_once():
+    # Avoid running automatically (reduce 429)
     if st.session_state.get("schema_ok", False):
         return
     if not st.session_state.get("init_schema_now", False):
@@ -161,7 +178,7 @@ def ensure_schema_once():
         st.success("✅ Sheets vérifiées/initialisées.")
     except APIError as e:
         st.session_state.init_schema_now = False
-        st.error(explain_api_error(e))
+        st.error(explain_gspread_error(e))
         raise
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -174,12 +191,18 @@ def read_df(ws_name: str) -> pd.DataFrame:
     rows = values[1:]
     return pd.DataFrame(rows, columns=headers)
 
+def _clear_cache():
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
 def append_row(ws_name: str, row: dict):
     ws = spreadsheet().worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
     out = [norm(row.get(h, "")) for h in headers]
     ws.append_row(out, value_input_option="USER_ENTERED")
-    st.cache_data.clear()
+    _clear_cache()
 
 def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], updates: dict) -> bool:
     df = read_df(ws_name)
@@ -196,7 +219,7 @@ def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], up
         return False
 
     idx = m.index[0]
-    row_num = idx + 2
+    row_num = idx + 2  # 1 header row
     ws = spreadsheet().worksheet(ws_name)
     headers = REQUIRED_SHEETS[ws_name]
 
@@ -205,7 +228,7 @@ def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], up
             continue
         ws.update_cell(row_num, headers.index(col_name) + 1, norm(val))
 
-    st.cache_data.clear()
+    _clear_cache()
     return True
 
 # =========================================================
@@ -213,22 +236,23 @@ def update_row_by_key(ws_name: str, key_cols: list[str], key_vals: list[str], up
 # =========================================================
 def drive_check_folder(folder_id: str):
     svc = drive_service()
-    try:
-        meta = svc.files().get(
-            fileId=folder_id,
-            fields="id,name,mimeType,driveId",
-            supportsAllDrives=True
-        ).execute()
-        if meta.get("mimeType") != "application/vnd.google-apps.folder":
-            st.error(f"❌ هذا موش Folder ID. mimeType={meta.get('mimeType')}")
-        else:
-            st.success(f"✅ Folder OK: {meta.get('name')}")
-    except Exception as e:
-        st.error("❌ Drive folder error: " + http_error_text(e))
-        raise
+    meta = svc.files().get(
+        fileId=folder_id,
+        fields="id,name,mimeType,driveId",
+        supportsAllDrives=True
+    ).execute()
 
-def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder_id: str):
+    if meta.get("mimeType") != "application/vnd.google-apps.folder":
+        raise RuntimeError(f"Not a folder. mimeType={meta.get('mimeType')}")
+    return meta
+
+def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder_id: str) -> tuple[str, str, str]:
+    """
+    Upload to a folder (My Drive / Shared Drive). Requires service account permission on that folder.
+    Returns (file_id, view_url, download_url).
+    """
     svc = drive_service()
+
     media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=False)
     meta = {"name": file_name, "parents": [folder_id]}
 
@@ -241,7 +265,7 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
 
     file_id = created["id"]
 
-    # ---- permission (optional)
+    # Optional: make public (may be blocked by shared drive policy)
     try:
         svc.permissions().create(
             fileId=file_id,
@@ -254,12 +278,7 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
 
     view_url = f"https://drive.google.com/file/d/{file_id}/view"
     download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-
     return file_id, view_url, download_url
-
-    except Exception as e:
-        st.error("❌ Drive upload error: " + http_error_text(e))
-        raise
 
 # =========================================================
 # PROFILE PICS
@@ -280,7 +299,7 @@ def get_profile_pic_bytes(phone: str) -> bytes | None:
         return None
 
 def upsert_profile_pic(phone: str, trainee_id: str, img_bytes: bytes):
-    small = compress_image_bytes(img_bytes, max_side=256, quality=70)
+    small = compress_profile_image(img_bytes, max_side=256, quality=70)
     b64 = base64.b64encode(small).decode("utf-8")
 
     updated = update_row_by_key(
@@ -325,6 +344,7 @@ def set_payment_month(trainee_id: str, year: str, month: str, paid: bool, staff_
     df = read_df("Payments")
     if df.empty:
         return False
+
     m = df[(df["trainee_id"].astype(str).str.strip() == norm(trainee_id)) &
            (df["year"].astype(str).str.strip() == norm(year))]
     if m.empty:
@@ -339,16 +359,16 @@ def set_payment_month(trainee_id: str, year: str, month: str, paid: bool, staff_
     ws.update_cell(row_num, headers.index("updated_at") + 1, now_str())
     ws.update_cell(row_num, headers.index("staff_name") + 1, staff_name)
 
-    st.cache_data.clear()
+    _clear_cache()
     return True
 
 # =========================================================
 # AUTH / SESSION
 # =========================================================
 def ensure_session():
-    st.session_state.setdefault("role", None)
-    st.session_state.setdefault("user", {})
-    st.session_state.setdefault("student", None)
+    st.session_state.setdefault("role", None)       # "staff" | None
+    st.session_state.setdefault("user", {})         # {"branch":...}
+    st.session_state.setdefault("student", None)    # account row dict
 
 def logout_staff():
     st.session_state.role = None
@@ -358,10 +378,12 @@ def staff_branch_login(branch: str, branch_password: str):
     df = read_df("Branches")
     if df.empty:
         return None
+
     df2 = df.copy()
     df2["branch"] = df2["branch"].astype(str).str.strip()
     df2["staff_password"] = df2["staff_password"].astype(str).str.strip()
     df2["is_active"] = df2["is_active"].astype(str).str.strip().str.lower()
+
     m = df2[(df2["branch"] == norm(branch)) &
             (df2["staff_password"] == norm(branch_password)) &
             (df2["is_active"] != "false")]
@@ -376,16 +398,18 @@ def student_login(phone: str, password: str):
     df2 = df.copy()
     df2["phone"] = df2["phone"].astype(str).str.strip()
     df2["password"] = df2["password"].astype(str).str.strip()
+
     m = df2[(df2["phone"] == norm(phone)) & (df2["password"] == norm(password))]
     if m.empty:
         return None
     return m.iloc[0].to_dict()
 
 # =========================================================
-# SIDEBAR
+# SIDEBAR STAFF LOGIN
 # =========================================================
 def sidebar_staff_login():
     st.sidebar.markdown("## 👨‍💼 Connexion Employé")
+
     branches_df = read_df("Branches")
     branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
 
@@ -422,15 +446,18 @@ def sidebar_staff_login():
             st.sidebar.error("Mot de passe incorrect / centre inactif.")
 
 # =========================================================
-# STUDENT PORTAL
+# STUDENT PORTAL (CENTER)
 # =========================================================
 def student_portal_center():
     st.markdown("## 🎓 Espace Stagiaire")
+
     tab1, tab2, tab3 = st.tabs(["🔐 Connexion", "🆕 Inscription", "📌 Mon espace"])
 
+    # ---------------- Login
     with tab1:
         phone = st.text_input("Téléphone", key="stud_phone")
         pwd = st.text_input("Mot de passe", type="password", key="stud_pwd")
+
         if st.button("Se connecter", use_container_width=True, key="btn_login"):
             acc = student_login(phone, pwd)
             if acc:
@@ -439,17 +466,21 @@ def student_portal_center():
                 st.success("✅ Connexion réussie")
             else:
                 st.error("Téléphone / mot de passe incorrect.")
+
         if st.button("Se déconnecter", use_container_width=True, key="btn_logout"):
             st.session_state.student = None
             st.rerun()
 
+    # ---------------- Registration (Name free, phone must exist in Trainees)
     with tab2:
         st.subheader("Inscription (Nom libre + Téléphone لازم يكون مسجّل عند الإدارة)")
+
         branches_df = read_df("Branches")
         branches = sorted([x for x in branches_df["branch"].astype(str).str.strip().unique().tolist() if x]) if not branches_df.empty else []
         if not branches:
             st.warning("Aucun centre.")
             return
+
         b = st.selectbox("Centre", branches, key="reg_branch")
 
         prog_df = df_filter(read_df("Programs"), branch=b)
@@ -514,10 +545,11 @@ def student_portal_center():
             })
             st.success("✅ Compte créé. امشي Connexion.")
 
+    # ---------------- My space
     with tab3:
         acc = st.session_state.get("student")
         if not acc:
-            st.info("اعمل Connexion.")
+            st.info("اعمل Connexion باش تشوف النوطات والدفوعات والملفات.")
             return
 
         trainee_id = norm(acc.get("trainee_id"))
@@ -552,9 +584,12 @@ def student_portal_center():
                 img_bytes = up.read()
                 st.image(img_bytes, caption="Aperçu", width=150)
                 if st.button("Enregistrer ma photo", use_container_width=True, key="savepp"):
-                    upsert_profile_pic(phone, trainee_id, img_bytes)
-                    st.success("✅ Photo enregistrée.")
-                    st.rerun()
+                    try:
+                        upsert_profile_pic(phone, trainee_id, img_bytes)
+                        st.success("✅ Photo enregistrée.")
+                        st.rerun()
+                    except APIError as e:
+                        st.error(explain_gspread_error(e))
 
         t1, t2, t3, t4 = st.tabs(["📝 Notes", "🗓️ Planning", "💳 Paiements", "📎 Supports"])
 
@@ -564,6 +599,10 @@ def student_portal_center():
             if grf.empty:
                 st.info("Aucune note.")
             else:
+                # safe sort
+                for col in ["date", "created_at"]:
+                    if col not in grf.columns:
+                        grf[col] = ""
                 grf = grf.sort_values(by=["date", "created_at"], ascending=False)
                 st.dataframe(grf[["subject_name", "exam_type", "score", "date", "staff_name", "note"]],
                              use_container_width=True, hide_index=True)
@@ -576,8 +615,10 @@ def student_portal_center():
             if m.empty:
                 st.info("لا توجد Planning.")
             else:
-                st.markdown(f"**View:** {norm(m.iloc[0].get('drive_view_url'))}")
-                st.markdown(f"**Download:** {norm(m.iloc[0].get('drive_download_url'))}")
+                view = norm(m.iloc[0].get("drive_view_url"))
+                dl = norm(m.iloc[0].get("drive_download_url"))
+                st.markdown(f"**View:** {view}")
+                st.markdown(f"**Download:** {dl}")
 
         with t3:
             year = str(datetime.now().year)
@@ -599,6 +640,8 @@ def student_portal_center():
             if files.empty:
                 st.info("لا توجد ملفات.")
             else:
+                if "uploaded_at" not in files.columns:
+                    files["uploaded_at"] = ""
                 files = files.sort_values(by=["uploaded_at"], ascending=False)
                 for _, r in files.iterrows():
                     st.markdown(f"**📌 {norm(r.get('subject_name'))}** — {norm(r.get('file_name'))}")
@@ -607,10 +650,11 @@ def student_portal_center():
                     st.divider()
 
 # =========================================================
-# STAFF AREA
+# STAFF AREA (CENTER)
 # =========================================================
 def staff_work_center():
     st.markdown("## 🛠️ Espace Employé")
+
     if st.session_state.role != "staff":
         st.info("Connexion Employé من اليسار.")
         return
@@ -618,6 +662,7 @@ def staff_work_center():
     staff_branch = norm(st.session_state.user.get("branch"))
     staff_name = f"Staff-{staff_branch}"
 
+    # Programs/groups selectors
     prog_df = df_filter(read_df("Programs"), branch=staff_branch)
     prog_df = prog_df[prog_df["is_active"].astype(str).str.strip().str.lower() != "false"].copy()
     programs = sorted([x for x in prog_df["program_name"].astype(str).str.strip().tolist() if x])
@@ -641,6 +686,7 @@ def staff_work_center():
         ["👤 Stagiaires", "📝 Notes", "💳 Paiements", "🗓️ Planning (Drive)", "📎 Supports (Drive)"]
     )
 
+    # -------- Stagiaires
     with tab_stag:
         if not (program and group):
             st.info("اختار spécialité + groupe.")
@@ -653,6 +699,7 @@ def staff_work_center():
             name = st.text_input("Nom", key="add_tr_name")
             phone = st.text_input("Téléphone", key="add_tr_phone")
             status = st.selectbox("Statut", ["active", "inactive"], key="add_tr_status")
+
             if st.button("Enregistrer", use_container_width=True, key="btn_add_tr"):
                 if not norm(name) or not norm(phone):
                     st.error("Nom + téléphone obligatoire.")
@@ -678,7 +725,8 @@ def staff_work_center():
                 df.columns = [c.strip() for c in df.columns]
                 st.dataframe(df.head(20), use_container_width=True)
 
-                if st.button("✅ Importer maintenant", use_container_width=True, key=f"do_imp_{staff_branch}_{program}_{group}"):
+                if st.button("✅ Importer maintenant", use_container_width=True,
+                             key=f"do_imp_{staff_branch}_{program}_{group}"):
                     if "full_name" not in df.columns or "phone" not in df.columns:
                         st.error("لازم full_name و phone.")
                     else:
@@ -705,9 +753,11 @@ def staff_work_center():
                             })
                             existing_phones.add(ph)
                             count += 1
+
                         st.success(f"✅ Import terminé: {count}")
                         st.rerun()
 
+    # -------- Notes
     with tab_gr:
         if not (program and group):
             st.info("اختار spécialité + groupe.")
@@ -718,15 +768,18 @@ def staff_work_center():
             if tr.empty:
                 st.warning("لا يوجد stagiaires.")
             elif sub.empty:
-                st.warning("زيد matières قبل.")
+                st.warning("زيد matières قبل. (Sheet Subjects)")
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key=f"gr_tr_{staff_branch}_{program}_{group}")
+
+                chosen = st.selectbox("Stagiaire", tr["label"].tolist(),
+                                      key=f"gr_tr_{staff_branch}_{program}_{group}")
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x])
                 subject_name = st.selectbox("Matière", subjects, key=f"gr_sub_{staff_branch}_{program}_{group}")
+
                 exam_type = st.text_input("Type examen (DS1/TP/Examen...)", key=f"gr_exam_{staff_branch}_{program}_{group}")
                 score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25,
                                         key=f"gr_score_{staff_branch}_{program}_{group}")
@@ -754,6 +807,7 @@ def staff_work_center():
                         st.success("✅ Note enregistrée.")
                         st.rerun()
 
+    # -------- Payments
     with tab_pay:
         if not (program and group):
             st.info("اختار spécialité + groupe.")
@@ -764,7 +818,9 @@ def staff_work_center():
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist(), key=f"pay_tr_{staff_branch}_{program}_{group}_{year}")
+
+                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist(),
+                                      key=f"pay_tr_{staff_branch}_{program}_{group}_{year}")
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 ensure_payment_row(trainee_id, staff_branch, program, group, year, staff_name)
@@ -775,7 +831,7 @@ def staff_work_center():
                 rowp = m.iloc[0].to_dict()
 
                 cols = st.columns(4)
-                for i, mo in enumerate(MONTHS):
+                for i, mo in enumerate(MONTS := MONTHS):
                     paid = (norm(rowp.get(mo)).upper() == "TRUE")
                     with cols[i % 4]:
                         new_paid = st.checkbox(mo, value=paid, key=f"ck_{mo}_{trainee_id}_{year}")
@@ -783,38 +839,107 @@ def staff_work_center():
                             set_payment_month(trainee_id, year, mo, new_paid, staff_name)
                             st.rerun()
 
+    # -------- Planning upload
     with tab_plan:
         if not (program and group):
             st.info("اختار spécialité + groupe.")
         else:
             folder_id = st.secrets["DRIVE_FOLDER_ID"]
-            drive_check_folder(folder_id)
+
+            try:
+                drive_check_folder(folder_id)
+            except Exception as e:
+                st.error("❌ Folder error (Drive): " + http_error_text(e))
+                st.info("✅ الحل: اعمل Share للـFolder للـService Account كـ Editor / أو زيدو Member في Shared Drive.")
+                return
 
             up = st.file_uploader("Uploader Planning (PNG/JPG)", type=["png", "jpg", "jpeg"],
                                   key=f"planning_upl_{staff_branch}_{program}_{group}")
             if up is not None:
                 st.image(up, caption="Aperçu", use_container_width=True)
 
-                if st.button("✅ Uploader Planning", use_container_width=True,
-                             key=f"planning_save_{staff_branch}_{program}_{group}"):
-                    raw = up.read()
-                    file_name = f"PLANNING_{staff_branch}_{program}_{group}_{uuid.uuid4().hex[:6]}.jpg".replace(" ", "_")
-                    mime = up.type or "image/jpeg"
+                if st.button("✅ Uploader Planning", use_container_width=True, key=f"planning_save_{staff_branch}_{program}_{group}"):
+                    try:
+                        raw = up.read()
+                        file_name = f"PLANNING_{staff_branch}_{program}_{group}_{uuid.uuid4().hex[:6]}.jpg".replace(" ", "_")
+                        mime = up.type or "image/jpeg"
 
-                    file_id, view_url, dl_url = drive_upload_bytes(raw, file_name, mime, folder_id)
+                        file_id, view_url, dl_url = drive_upload_bytes(raw, file_name, mime, folder_id)
 
-                    updated = update_row_by_key(
-                        "TimetableImages",
-                        ["branch", "program", "group"],
-                        [staff_branch, program, group],
-                        {"drive_file_id": file_id, "drive_view_url": view_url, "drive_download_url": dl_url,
-                         "uploaded_at": now_str(), "staff_name": staff_name}
-                    )
-                    if not updated:
-                        append_row("TimetableImages", {
+                        updated = update_row_by_key(
+                            "TimetableImages",
+                            ["branch", "program", "group"],
+                            [staff_branch, program, group],
+                            {"drive_file_id": file_id,
+                             "drive_view_url": view_url,
+                             "drive_download_url": dl_url,
+                             "uploaded_at": now_str(),
+                             "staff_name": staff_name}
+                        )
+                        if not updated:
+                            append_row("TimetableImages", {
+                                "branch": staff_branch,
+                                "program": norm(program),
+                                "group": norm(group),
+                                "drive_file_id": file_id,
+                                "drive_view_url": view_url,
+                                "drive_download_url": dl_url,
+                                "uploaded_at": now_str(),
+                                "staff_name": staff_name,
+                            })
+
+                        st.success("✅ Planning uploaded.")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error("❌ Drive upload error: " + http_error_text(e))
+                        st.info("✅ الحل: Share للـFolder للـService Account كـ Editor / أو زيدو Member في Shared Drive.")
+
+    # -------- Supports upload
+    with tab_sup:
+        if not (program and group):
+            st.info("اختار spécialité + groupe.")
+        else:
+            folder_id = st.secrets["DRIVE_FOLDER_ID"]
+
+            try:
+                drive_check_folder(folder_id)
+            except Exception as e:
+                st.error("❌ Folder error (Drive): " + http_error_text(e))
+                st.info("✅ الحل: اعمل Share للـFolder للـService Account كـ Editor / أو زيدو Member في Shared Drive.")
+                return
+
+            sub = df_filter(read_df("Subjects"), branch=staff_branch, program=program, group=group)
+            subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x]) if not sub.empty else []
+
+            if not subjects:
+                st.warning("زيد matières قبل رفع الملفات. (Sheet Subjects)")
+            else:
+                subj = st.selectbox("Matière", subjects, key=f"cf_subject_{staff_branch}_{program}_{group}")
+
+                up = st.file_uploader("Uploader fichier (PDF/DOCX/IMG...)", key=f"cf_file_{staff_branch}_{program}_{group}")
+
+                if up is not None:
+                    st.caption(f"Fichier: {up.name} ({up.type or 'unknown'})")
+
+                if up is not None and st.button("✅ Enregistrer fichier", use_container_width=True, key=f"cf_save_{staff_branch}_{program}_{group}"):
+                    try:
+                        raw = up.read()
+                        file_id, view_url, dl_url = drive_upload_bytes(
+                            raw,
+                            up.name,
+                            up.type or "application/octet-stream",
+                            folder_id
+                        )
+
+                        append_row("CourseFiles", {
+                            "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
                             "branch": staff_branch,
                             "program": norm(program),
                             "group": norm(group),
+                            "subject_name": norm(subj),
+                            "file_name": norm(up.name),
+                            "mime_type": norm(up.type or "application/octet-stream"),
                             "drive_file_id": file_id,
                             "drive_view_url": view_url,
                             "drive_download_url": dl_url,
@@ -822,65 +947,12 @@ def staff_work_center():
                             "staff_name": staff_name,
                         })
 
-                    st.success("✅ Planning uploaded.")
-                    st.rerun()
+                        st.success("✅ Fichier enregistré.")
+                        st.rerun()
 
-    with tab_sup:
-        if not (program and group):
-            st.info("اختار spécialité + groupe.")
-        else:
-            folder_id = st.secrets["DRIVE_FOLDER_ID"]
-            drive_check_folder(folder_id)
-
-            sub = df_filter(read_df("Subjects"), branch=staff_branch, program=program, group=group)
-            subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x]) if not sub.empty else []
-
-            if not subjects:
-                st.warning("زيد matières قبل رفع الملفات.")
-            else:
-                subj = st.selectbox(
-                    "Matière",
-                    subjects,
-                    key=f"cf_subject_{staff_branch}_{program}_{group}"
-                )
-
-                up = st.file_uploader(
-                    "Uploader fichier (PDF/DOCX/IMG...)",
-                    key=f"cf_file_{staff_branch}_{program}_{group}"
-                )
-
-                if up is not None:
-                    st.caption(f"Fichier: {up.name} ({up.type or 'unknown'})")
-
-                if up is not None and st.button(
-                    "✅ Enregistrer fichier",
-                    use_container_width=True,
-                    key=f"cf_save_{staff_branch}_{program}_{group}"
-                ):
-                    raw = up.read()
-                    file_id, view_url, dl_url = drive_upload_bytes(
-                        raw,
-                        up.name,
-                        up.type or "application/octet-stream",
-                        folder_id
-                    )
-
-                    append_row("CourseFiles", {
-                        "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
-                        "branch": staff_branch,
-                        "program": norm(program),
-                        "group": norm(group),
-                        "subject_name": norm(subj),
-                        "file_name": norm(up.name),
-                        "mime_type": norm(up.type or "application/octet-stream"),
-                        "drive_file_id": file_id,
-                        "drive_view_url": view_url,
-                        "drive_download_url": dl_url,
-                        "uploaded_at": now_str(),
-                        "staff_name": staff_name,
-                    })
-                    st.success("✅ Fichier enregistré.")
-                    st.rerun()
+                    except Exception as e:
+                        st.error("❌ Drive upload error: " + http_error_text(e))
+                        st.info("✅ الحل: Share للـFolder للـService Account كـ Editor / أو زيدو Member في Shared Drive.")
 
 # =========================================================
 # MAIN
@@ -888,8 +960,10 @@ def staff_work_center():
 def main():
     ensure_session()
     ensure_schema_once()
+
     sidebar_staff_login()
 
+    # Center
     if st.session_state.role == "staff":
         staff_work_center()
         st.divider()
@@ -900,9 +974,9 @@ def main():
         st.info("ℹ️ Connexion Employé موجودة في اليسار.")
 
 if __name__ == "__main__":
-    main()
-
-
-
-
-
+    try:
+        main()
+    except APIError as e:
+        st.error(explain_gspread_error(e))
+    except Exception as e:
+        st.error("❌ App error: " + str(e))
