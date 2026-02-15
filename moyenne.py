@@ -247,8 +247,8 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
             fields="id",
             supportsAllDrives=True
         ).execute()
-    except Exception:
-        pass
+        except Exception:
+            pass
 
         view_url = f"https://drive.google.com/file/d/{file_id}/view"
         download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -898,5 +898,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
