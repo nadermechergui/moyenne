@@ -34,17 +34,13 @@ REQUIRED_SHEETS = {
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group",
                "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
 
-    # Drive planning
     "TimetableImages": ["branch", "program", "group", "drive_file_id",
                         "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 
-    # Profile pics (small base64)
     "ProfilePics": ["phone", "trainee_id", "image_b64", "uploaded_at"],
 
-    # Payments
     "Payments": ["payment_id", "trainee_id", "branch", "program", "group", "year"] + MONTHS + ["updated_at", "staff_name"],
 
-    # Course supports on Drive
     "CourseFiles": ["file_id", "branch", "program", "group", "subject_name", "file_name", "mime_type",
                     "drive_file_id", "drive_view_url", "drive_download_url", "uploaded_at", "staff_name"],
 }
@@ -244,7 +240,6 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
         ).execute()
         file_id = created["id"]
 
-        # may fail if shared drive blocks public sharing
         svc.permissions().create(
             fileId=file_id,
             body={"type": "anyone", "role": "reader"},
@@ -394,11 +389,11 @@ def sidebar_staff_login():
 
         st.sidebar.divider()
         st.sidebar.markdown("### 🧰 Maintenance")
-        if st.sidebar.button("Initialiser / Vérifier les Sheets", use_container_width=True):
+        if st.sidebar.button("Initialiser / Vérifier les Sheets", use_container_width=True, key="btn_init_schema"):
             st.session_state.init_schema_now = True
             st.rerun()
 
-        if st.sidebar.button("Se déconnecter", use_container_width=True):
+        if st.sidebar.button("Se déconnecter", use_container_width=True, key="btn_staff_logout"):
             logout_staff()
             st.rerun()
         return
@@ -407,10 +402,10 @@ def sidebar_staff_login():
         st.sidebar.warning("Branches vide. Ajoutez centres + mots de passe.")
         return
 
-    branch = st.sidebar.selectbox("Centre", branches)
-    pwd = st.sidebar.text_input("Mot de passe du centre", type="password")
+    branch = st.sidebar.selectbox("Centre", branches, key="sb_branch")
+    pwd = st.sidebar.text_input("Mot de passe du centre", type="password", key="sb_pwd")
 
-    if st.sidebar.button("Connexion", use_container_width=True):
+    if st.sidebar.button("Connexion", use_container_width=True, key="btn_staff_login"):
         user = staff_branch_login(branch, pwd)
         if user:
             st.session_state.role = "staff"
@@ -467,9 +462,9 @@ def student_portal_center():
             return
         g = st.selectbox("Groupe", groups, key="reg_group")
 
-        student_name = st.text_input("Nom (أي اسم تحب)")
-        phone = st.text_input("Téléphone (نفس رقمك عند الإدارة)")
-        pwd = st.text_input("Mot de passe", type="password")
+        student_name = st.text_input("Nom (أي اسم تحب)", key="reg_student_name")
+        phone = st.text_input("Téléphone (نفس رقمك عند الإدارة)", key="reg_phone")
+        pwd = st.text_input("Mot de passe", type="password", key="reg_pwd")
 
         if st.button("Créer mon compte", use_container_width=True, key="btn_register"):
             if not norm(student_name) or not norm(phone) or not norm(pwd):
@@ -632,7 +627,9 @@ def staff_work_center():
             groups = sorted([x for x in grp_df["group_name"].astype(str).str.strip().tolist() if x])
             group = st.selectbox("Groupe", groups, key="manage_group") if groups else None
     with colC:
-        year = st.selectbox("Année", [str(datetime.now().year), str(datetime.now().year + 1), str(datetime.now().year - 1)], key="pay_year")
+        year = st.selectbox("Année",
+                            [str(datetime.now().year), str(datetime.now().year + 1), str(datetime.now().year - 1)],
+                            key="pay_year")
 
     tab_stag, tab_gr, tab_pay, tab_plan, tab_sup = st.tabs(
         ["👤 Stagiaires", "📝 Notes", "💳 Paiements", "🗓️ Planning (Drive)", "📎 Supports (Drive)"]
@@ -650,7 +647,7 @@ def staff_work_center():
             name = st.text_input("Nom", key="add_tr_name")
             phone = st.text_input("Téléphone", key="add_tr_phone")
             status = st.selectbox("Statut", ["active", "inactive"], key="add_tr_status")
-            if st.button("Enregistrer", use_container_width=True):
+            if st.button("Enregistrer", use_container_width=True, key="btn_add_tr"):
                 if not norm(name) or not norm(phone):
                     st.error("Nom + téléphone obligatoire.")
                 else:
@@ -669,13 +666,13 @@ def staff_work_center():
 
             st.divider()
             st.markdown("### 📥 Import Excel (xlsx) : full_name + phone")
-            up = st.file_uploader("Uploader Excel", type=["xlsx"], key="excel_tr")
+            up = st.file_uploader("Uploader Excel", type=["xlsx"], key=f"excel_tr_{staff_branch}_{program}_{group}")
             if up is not None:
                 df = pd.read_excel(up)
                 df.columns = [c.strip() for c in df.columns]
                 st.dataframe(df.head(20), use_container_width=True)
 
-                if st.button("✅ Importer maintenant", use_container_width=True, key="do_imp"):
+                if st.button("✅ Importer maintenant", use_container_width=True, key=f"do_imp_{staff_branch}_{program}_{group}"):
                     if "full_name" not in df.columns or "phone" not in df.columns:
                         st.error("لازم full_name و phone.")
                     else:
@@ -719,17 +716,18 @@ def staff_work_center():
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Stagiaire", tr["label"].tolist())
+                chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key=f"gr_tr_{staff_branch}_{program}_{group}")
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x])
-                subject_name = st.selectbox("Matière", subjects)
-                exam_type = st.text_input("Type examen (DS1/TP/Examen...)")
-                score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25)
-                date = st.date_input("Date", value=datetime.now().date())
-                note = st.text_area("Remarque")
+                subject_name = st.selectbox("Matière", subjects, key=f"gr_sub_{staff_branch}_{program}_{group}")
+                exam_type = st.text_input("Type examen (DS1/TP/Examen...)", key=f"gr_exam_{staff_branch}_{program}_{group}")
+                score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25,
+                                        key=f"gr_score_{staff_branch}_{program}_{group}")
+                date = st.date_input("Date", value=datetime.now().date(), key=f"gr_date_{staff_branch}_{program}_{group}")
+                note = st.text_area("Remarque", key=f"gr_note_{staff_branch}_{program}_{group}")
 
-                if st.button("✅ Enregistrer la note", use_container_width=True):
+                if st.button("✅ Enregistrer la note", use_container_width=True, key=f"gr_save_{staff_branch}_{program}_{group}"):
                     if not norm(exam_type):
                         st.error("Type examen obligatoire.")
                     else:
@@ -760,7 +758,7 @@ def staff_work_center():
             else:
                 tr = tr.copy()
                 tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
-                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist())
+                chosen = st.selectbox("Choisir stagiaire", tr["label"].tolist(), key=f"pay_tr_{staff_branch}_{program}_{group}_{year}")
                 trainee_id = tr[tr["label"] == chosen].iloc[0]["trainee_id"]
 
                 ensure_payment_row(trainee_id, staff_branch, program, group, year, staff_name)
@@ -786,11 +784,13 @@ def staff_work_center():
             folder_id = st.secrets["DRIVE_FOLDER_ID"]
             drive_check_folder(folder_id)
 
-            up = st.file_uploader("Uploader Planning (PNG/JPG)", type=["png", "jpg", "jpeg"], key="planning_upl")
+            up = st.file_uploader("Uploader Planning (PNG/JPG)", type=["png", "jpg", "jpeg"],
+                                  key=f"planning_upl_{staff_branch}_{program}_{group}")
             if up is not None:
                 st.image(up, caption="Aperçu", use_container_width=True)
 
-                if st.button("✅ Uploader Planning", use_container_width=True):
+                if st.button("✅ Uploader Planning", use_container_width=True,
+                             key=f"planning_save_{staff_branch}_{program}_{group}"):
                     raw = up.read()
                     file_name = f"PLANNING_{staff_branch}_{program}_{group}_{uuid.uuid4().hex[:6]}.jpg".replace(" ", "_")
                     mime = up.type or "image/jpeg"
@@ -828,6 +828,7 @@ def staff_work_center():
 
             sub = df_filter(read_df("Subjects"), branch=staff_branch, program=program, group=group)
             subjects = sorted([x for x in sub["subject_name"].astype(str).str.strip().tolist() if x]) if not sub.empty else []
+
             if not subjects:
                 st.warning("زيد matières قبل رفع الملفات.")
             else:
@@ -835,43 +836,45 @@ def staff_work_center():
                     "Matière",
                     subjects,
                     key=f"cf_subject_{staff_branch}_{program}_{group}"
-                    )
+                )
 
                 up = st.file_uploader(
                     "Uploader fichier (PDF/DOCX/IMG...)",
                     key=f"cf_file_{staff_branch}_{program}_{group}"
-                    )
+                )
 
-            if up is not None and st.button(
+                if up is not None:
+                    st.caption(f"Fichier: {up.name} ({up.type or 'unknown'})")
+
+                if up is not None and st.button(
                     "✅ Enregistrer fichier",
                     use_container_width=True,
                     key=f"cf_save_{staff_branch}_{program}_{group}"
-                    ):
-               raw = up.read()
+                ):
+                    raw = up.read()
                     file_id, view_url, dl_url = drive_upload_bytes(
-                    raw,
-                    up.name,
-                    up.type or "application/octet-stream",
-                    folder_id
+                        raw,
+                        up.name,
+                        up.type or "application/octet-stream",
+                        folder_id
                     )
 
-            append_row("CourseFiles", {
-                    "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
-                    "branch": staff_branch,
-                    "program": norm(program),
-                    "group": norm(group),
-                    "subject_name": norm(subj),
-                    "file_name": norm(up.name),
-                    "mime_type": norm(up.type or "application/octet-stream"),
-                    "drive_file_id": file_id,
-                    "drive_view_url": view_url,
-                    "drive_download_url": dl_url,
-                    "uploaded_at": now_str(),
-                    "staff_name": staff_name,
+                    append_row("CourseFiles", {
+                        "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
+                        "branch": staff_branch,
+                        "program": norm(program),
+                        "group": norm(group),
+                        "subject_name": norm(subj),
+                        "file_name": norm(up.name),
+                        "mime_type": norm(up.type or "application/octet-stream"),
+                        "drive_file_id": file_id,
+                        "drive_view_url": view_url,
+                        "drive_download_url": dl_url,
+                        "uploaded_at": now_str(),
+                        "staff_name": staff_name,
                     })
-            st.success("✅ Fichier enregistré.")
-            st.rerun()
-
+                    st.success("✅ Fichier enregistré.")
+                    st.rerun()
 
 # =========================================================
 # MAIN
@@ -892,5 +895,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
