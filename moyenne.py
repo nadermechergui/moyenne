@@ -832,45 +832,45 @@ def staff_work_center():
                 st.warning("زيد matières قبل رفع الملفات.")
             else:
                 subj = st.selectbox(
-    "Matière",
-    subjects,
-    key=f"cf_subject_{staff_branch}_{program}_{group}"
-)
+                    "Matière",
+                    subjects,
+                    key=f"cf_subject_{staff_branch}_{program}_{group}"
+                    )
 
-up = st.file_uploader(
-    "Uploader fichier (PDF/DOCX/IMG...)",
-    key=f"cf_file_{staff_branch}_{program}_{group}"
-)
+                up = st.file_uploader(
+                    "Uploader fichier (PDF/DOCX/IMG...)",
+                    key=f"cf_file_{staff_branch}_{program}_{group}"
+                    )
 
-if up is not None and st.button(
-    "✅ Enregistrer fichier",
-    use_container_width=True,
-    key=f"cf_save_{staff_branch}_{program}_{group}"
-):
-    raw = up.read()
-    file_id, view_url, dl_url = drive_upload_bytes(
-        raw,
-        up.name,
-        up.type or "application/octet-stream",
-        folder_id
-    )
+            if up is not None and st.button(
+                    "✅ Enregistrer fichier",
+                    use_container_width=True,
+                    key=f"cf_save_{staff_branch}_{program}_{group}"
+                    ):
+               raw = up.read()
+                    file_id, view_url, dl_url = drive_upload_bytes(
+                    raw,
+                    up.name,
+                    up.type or "application/octet-stream",
+                    folder_id
+                    )
 
-    append_row("CourseFiles", {
-        "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
-        "branch": staff_branch,
-        "program": norm(program),
-        "group": norm(group),
-        "subject_name": norm(subj),
-        "file_name": norm(up.name),
-        "mime_type": norm(up.type or "application/octet-stream"),
-        "drive_file_id": file_id,
-        "drive_view_url": view_url,
-        "drive_download_url": dl_url,
-        "uploaded_at": now_str(),
-        "staff_name": staff_name,
-    })
-    st.success("✅ Fichier enregistré.")
-    st.rerun()
+            append_row("CourseFiles", {
+                    "file_id": f"CF-{uuid.uuid4().hex[:8].upper()}",
+                    "branch": staff_branch,
+                    "program": norm(program),
+                    "group": norm(group),
+                    "subject_name": norm(subj),
+                    "file_name": norm(up.name),
+                    "mime_type": norm(up.type or "application/octet-stream"),
+                    "drive_file_id": file_id,
+                    "drive_view_url": view_url,
+                    "drive_download_url": dl_url,
+                    "uploaded_at": now_str(),
+                    "staff_name": staff_name,
+                    })
+            st.success("✅ Fichier enregistré.")
+            st.rerun()
 
 
 # =========================================================
@@ -892,4 +892,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
