@@ -240,12 +240,15 @@ def drive_upload_bytes(file_bytes: bytes, file_name: str, mime_type: str, folder
         ).execute()
         file_id = created["id"]
 
-        svc.permissions().create(
-            fileId=file_id,
-            body={"type": "anyone", "role": "reader"},
-            fields="id",
-            supportsAllDrives=True
-        ).execute()
+        try:
+    svc.permissions().create(
+        fileId=file_id,
+        body={"type": "anyone", "role": "reader"},
+        fields="id",
+        supportsAllDrives=True
+    ).execute()
+except Exception:
+    pass
 
         view_url = f"https://drive.google.com/file/d/{file_id}/view"
         download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -895,3 +898,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
