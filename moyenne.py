@@ -780,7 +780,7 @@ def student_portal_center():
                     years = [y_default]
                 year_pick = st.selectbox("Année", years, index=years.index(y_default) if y_default in years else 0, key="stud_tt_year")
                 tt = load_timetable(branch, program, group, year_pick)
-                st.markdown(timetable_grid_html(tt), unsafe_allow_html=True)
+                components.html(timetable_grid_html(tt), height=520, scrolling=True)
 
         with t3:
             years = list_payment_years(trainee_id)
@@ -1328,4 +1328,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
