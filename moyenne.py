@@ -15,6 +15,7 @@ import io
 import re
 from datetime import datetime, date as date_cls
 
+import streamlit.components.v1 as components
 import pandas as pd
 import streamlit as st
 import gspread
@@ -1327,3 +1328,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
