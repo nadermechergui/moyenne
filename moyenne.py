@@ -1,14 +1,14 @@
 # moyenne.py — Portail Mega Formation (Sheets only + Planning structuré + Liens Drive manuels)
 # ✅ Sidebar = Connexion Employé (à gauche)
 # ✅ Centre = Espace Stagiaire
-# ✅ Planning = الموظف يكتب (jour + وقت + matière + prof + couleur) والمتكون يشوف tableau ملون
-# ✅ Paiements = حسب السنوات (2025/2026...) + أشهر Jan..Dec
-# ✅ Supports de cours = روابط Google Drive (manual paste) + المتكون يلقى الدروس ويحملها
+# ✅ Planning structuré + affichage tableau coloré
+# ✅ Paiements par année + mois
+# ✅ Supports: liens Google Drive (manual paste) بدون Drive API
 # ✅ Import Excel stagiaires (full_name + phone)
-# ✅ CRUD: الموظف ينجم يزيد/يعدّل/يفسخ (Planning + Supports + Stagiaires + Notes + Paiements)
+# ✅ CRUD: Planning + Supports + Stagiaires + Notes + Paiements
 # ✅ Notes: الموظف ينجم يعدّل/يفسخ النوط اللي زادهم + جدول "Mes notes" حسب الاختصاص
-# ✅ بدون Drive API (تفادياً لمشاكل Service Account quota/permissions)
-# ✅ بدون st.link_button (باش ما يطيحش حسب نسخة Streamlit)
+# ✅ Fix crash: read_df ما يطيحش (APIError/WorksheetNotFound) + init schema auto مرة أولى
+# ✅ بدون st.link_button
 
 import uuid
 import base64
@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread.exceptions import APIError
+from gspread.exceptions import APIError, WorksheetNotFound
 from PIL import Image
 
 # =========================================================
@@ -166,7 +166,8 @@ def creds():
     creds_dict = st.secrets["gcp_service_account"]
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",  # ok even if only links
+        # Drive scope not needed if you only paste links:
+        # "https://www.googleapis.com/auth/drive",
     ]
     return Credentials.from_service_account_info(creds_dict, scopes=scopes)
 
@@ -204,7 +205,7 @@ def ensure_worksheets_and_headers():
         ensure_headers_safe(ws, headers)
 
 def ensure_schema_once():
-    # manual only to reduce 429
+    # auto once (first run), and still available from sidebar button
     if st.session_state.get("schema_ok", False):
         return
     if not st.session_state.get("init_schema_now", False):
@@ -217,22 +218,35 @@ def ensure_schema_once():
     except APIError as e:
         st.session_state.init_schema_now = False
         st.error(explain_api_error(e))
-        raise
+    except Exception as e:
+        st.session_state.init_schema_now = False
+        st.error(f"❌ Erreur init schema: {e}")
 
 # =========================================================
-# SHEETS CRUD (CACHED READ)
+# SHEETS CRUD (CACHED READ) + SAFE (NO CRASH)
 # =========================================================
 @st.cache_data(ttl=300, show_spinner=False)
 def read_df(ws_name: str) -> pd.DataFrame:
-    ws = spreadsheet().worksheet(ws_name)
-    values = ws.get_all_values()
+    try:
+        ws = spreadsheet().worksheet(ws_name)
+        values = ws.get_all_values()
+    except WorksheetNotFound:
+        st.error(f"❌ Worksheet '{ws_name}' غير موجودة. (Init Schema) من اليسار أو أول تشغيل.")
+        return pd.DataFrame(columns=REQUIRED_SHEETS.get(ws_name, []))
+    except APIError as e:
+        st.error(explain_api_error(e))
+        return pd.DataFrame(columns=REQUIRED_SHEETS.get(ws_name, []))
+    except Exception as e:
+        st.error(f"❌ Erreur inconnue أثناء قراءة '{ws_name}': {e}")
+        return pd.DataFrame(columns=REQUIRED_SHEETS.get(ws_name, []))
+
     if len(values) <= 1:
         return pd.DataFrame(columns=REQUIRED_SHEETS[ws_name])
+
     headers = values[0]
     rows = values[1:]
     df = pd.DataFrame(rows, columns=headers)
 
-    # ensure required columns exist (avoid KeyError)
     for c in REQUIRED_SHEETS[ws_name]:
         if c not in df.columns:
             df[c] = ""
@@ -374,7 +388,6 @@ def load_timetable(branch: str, program: str, group: str, year: str) -> pd.DataF
     if df.empty:
         return df
     df2 = df.copy()
-
     for c in REQUIRED_SHEETS["Timetable"]:
         if c not in df2.columns:
             df2[c] = ""
@@ -502,6 +515,10 @@ def ensure_session():
     st.session_state.setdefault("role", None)   # "staff" or None
     st.session_state.setdefault("user", {})
     st.session_state.setdefault("student", None)
+
+    # ✅ auto init schema first run (once)
+    st.session_state.setdefault("schema_ok", False)
+    st.session_state.setdefault("init_schema_now", True)
 
 def logout_staff():
     st.session_state.role = None
@@ -1106,7 +1123,6 @@ def staff_work_center():
                 st.info("ما عندك حتى note مسجلة لهالاختصاص/المجموعة.")
                 return
 
-            tr_map = {}
             tr_tmp = tr.copy()
             tr_tmp["trainee_id"] = tr_tmp["trainee_id"].astype(str).str.strip()
             tr_tmp["full_name"] = tr_tmp["full_name"].astype(str).str.strip()
@@ -1401,8 +1417,11 @@ def staff_work_center():
                             st.error("❌ Introuvable.")
 
                 st.markdown("#### Liste des supports")
-                st.dataframe(files[[c for c in ["subject_name", "title", "uploaded_at", "staff_name"] if c in files.columns]],
-                             use_container_width=True, hide_index=True)
+                st.dataframe(
+                    files[[c for c in ["subject_name", "title", "uploaded_at", "staff_name"] if c in files.columns]],
+                    use_container_width=True,
+                    hide_index=True
+                )
 
 # =========================================================
 # MAIN
@@ -1412,6 +1431,7 @@ def main():
     ensure_schema_once()
     sidebar_staff_login()
 
+    # staff sees both: staff tools + student portal (for testing)
     if st.session_state.role == "staff":
         staff_work_center()
         st.divider()
