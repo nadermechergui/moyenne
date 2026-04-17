@@ -1053,7 +1053,50 @@ def staff_work_center():
             tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
             chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key="gr_tr_sel")
             trainee_id = norm(tr[tr["label"] == chosen].iloc[0]["trainee_id"])
+            # ============================
+# 📊 عرض كل نوطات المتربص المختار
+# ============================
+st.markdown("### 📊 Notes du stagiaire sélectionné")
 
+gr_all = read_df("Grades")
+
+if not gr_all.empty:
+    # تأكد من الأعمدة
+    for c in ["trainee_id", "subject_name", "exam_type", "score", "date", "note"]:
+        if c not in gr_all.columns:
+            gr_all[c] = ""
+
+    gr_view = gr_all[
+        (gr_all["trainee_id"].astype(str).str.strip() == trainee_id) &
+        (gr_all["branch"].astype(str).str.strip() == staff_branch) &
+        (gr_all["program"].astype(str).str.strip() == norm(program)) &
+        (gr_all["group"].astype(str).str.strip() == norm(group))
+    ].copy()
+
+    if gr_view.empty:
+        st.info("⚠️ ما فما حتى note لهالمتربص.")
+    else:
+        # ترتيب
+        gr_view["date_sort"] = gr_view["date"].astype(str)
+        gr_view = gr_view.sort_values(by="date_sort", ascending=False)
+
+        st.dataframe(
+            gr_view[[
+                "subject_name",
+                "exam_type",
+                "score",
+                "date",
+                "note"
+            ]].rename(columns={
+                "subject_name": "📚 المادة",
+                "exam_type": "📝 نوع الامتحان",
+                "score": "🎯 النوط",
+                "date": "📅 التاريخ",
+                "note": "💬 ملاحظة"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
             subjects = sorted([x for x in sub.get("subject_name", pd.Series([], dtype=str)).astype(str).str.strip().tolist() if x])
             subject_name = st.selectbox("Matière", subjects, key="gr_sub_sel")
             exam_type = st.text_input("Type examen (DS1/TP/Examen...)", key="gr_exam")
