@@ -1099,7 +1099,12 @@ def staff_work_center():
             if not gr_all.empty:
 
                 df = gr_all.copy()
+                df["note"] = pd.to_numeric(
+                    df["note"].astype(str).str.replace(",", "."),
+                    errors="coerce"
+                )
 
+                df = df.dropna(subset=["note"])
                 # تنظيف
                 df["score"] = df["score"].astype(str).str.replace(",", ".").astype(float)
                 df["exam_type"] = df["exam_type"].astype(str).str.strip()
@@ -1123,11 +1128,11 @@ def staff_work_center():
 
             # 🔴 examen
                         exam = df_subj[df_subj["exam_type"] == "Examen"]
-                        exam_score = exam["score"].iloc[0] if not exam.empty else 0
+                        exam_score = exam["note"].iloc[0] if not exam.empty else 0
 
             # 🟢 contrôles
                         ctrl = df_subj[df_subj["exam_type"] != "Examen"]
-                        moyenne_ctrl = ctrl["score"].mean() if not ctrl.empty else 0
+                        moyenne_ctrl = ctrl["note"].mean() if not ctrl.empty else 0
 
             # 🟡 final
                         final = (moyenne_ctrl * 0.4) + (exam_score * 0.6)
