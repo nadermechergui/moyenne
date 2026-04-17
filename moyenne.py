@@ -1106,7 +1106,6 @@ def staff_work_center():
 
                 df = df.dropna(subset=["note"])
                 # تنظيف
-                df["score"] = df["score"].astype(str).str.replace(",", ".").astype(float)
                 df["exam_type"] = df["exam_type"].astype(str).str.strip()
 
     # فلترة حسب المتربص
@@ -1128,7 +1127,7 @@ def staff_work_center():
 
             # 🔴 examen
                         exam = df_subj[df_subj["exam_type"] == "Examen"]
-                        exam_score = exam["note"].iloc[0] if not exam.empty else 0
+                        exam_score = exam["note"].mean() if not exam.empty else 0
 
             # 🟢 contrôles
                         ctrl = df_subj[df_subj["exam_type"] != "Examen"]
