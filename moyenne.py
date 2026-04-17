@@ -954,7 +954,46 @@ def staff_work_center():
                         "is_active": "true",
                         "created_at": now_str()
                     })
-            
+    st.markdown("---")
+    st.markdown("### ⚖️ Modifier coefficient d'une matière")
+
+    df_sub_all = read_df("Subjects")
+
+    if not df_sub_all.empty:
+
+        df_sub_all = df_sub_all[
+            (df_sub_all["branch"].astype(str).str.strip() == staff_branch) &
+            (df_sub_all["program"].astype(str).str.strip() == norm(program)) &
+            (df_sub_all["group"].astype(str).str.strip() == norm(group))
+        ].copy()
+
+        df_sub_all["label"] = df_sub_all["subject_name"]
+
+        selected = st.selectbox("Choisir matière", df_sub_all["label"].tolist(), key="coef_select")
+
+        subject_row = df_sub_all[df_sub_all["label"] == selected].iloc[0]
+        subject_id = subject_row["subject_id"]
+
+        current_coef = subject_row.get("coefficient", "1")
+
+        coef_edit = st.selectbox(
+            "Coefficient",
+            [1, 3],
+            index=[1,3].index(int(current_coef)) if str(current_coef).isdigit() else 0,
+            key="coef_edit"
+        )
+
+        if st.button("💾 Appliquer coefficient", key="apply_coef_btn"):
+
+            ok = update_row_by_key("Subjects", ["subject_id"], [subject_id], {
+                "coefficient": str(coef_edit)
+            })
+
+            if ok:
+                st.success(f"✅ Coefficient mis à jour")
+                st.rerun()
+            else:
+                st.error("❌ Erreur")        
     # -------- Trainees
     with tabs[3]:
         if not (program and group):
