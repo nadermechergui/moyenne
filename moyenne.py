@@ -44,8 +44,7 @@ REQUIRED_SHEETS = {
     # student_name = الاسم اللي كتبو المتكون في التسجيل
     "Accounts": ["phone", "password", "trainee_id", "student_name", "created_at", "last_login"],
 
-    "Subjects": ["subject_id", "branch", "program", "group", "subject_name", "is_active", "created_at"],
-
+    "Subjects": ["subject_id", "branch", "program", "group", "subject_name", "coefficient", "is_active", "created_at"],
     "Grades": ["grade_id", "trainee_id", "branch", "program", "group",
                "subject_name", "exam_type", "score", "date", "staff_name", "note", "created_at"],
 
