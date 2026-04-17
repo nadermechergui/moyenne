@@ -954,32 +954,7 @@ def staff_work_center():
                         "is_active": "true",
                         "created_at": now_str()
                     })
-     st.markdown("### ✏️ Modifier coefficient")
-
-    if not cur.empty:
-
-        cur = cur.copy()
-        cur["label"] = cur["subject_name"].astype(str) + " | Coef: " + cur.get("coefficient", "").astype(str)
-
-        pick = st.selectbox("Choisir matière", cur["label"].tolist(), key="edit_coef_pick")
-
-        row = cur[cur["label"] == pick].iloc[0]
-        subject_id = row["subject_id"]
-
-        current_coef = int(row.get("coefficient", 1)) if str(row.get("coefficient")).isdigit() else 1
-
-        new_coef = st.selectbox("Nouveau coefficient", [1, 3], index=[1,3].index(current_coef) if current_coef in [1,3] else 0)
-
-        if st.button("💾 Modifier coefficient", key="update_coef_btn"):
-            ok = update_row_by_key("Subjects", ["subject_id"], [subject_id], {
-                "coefficient": str(new_coef)
-            })
-
-        if ok:
-            st.success("✅ Coefficient modifié.")
-            st.rerun()
-        else:
-            st.error("❌ Erreur modification.")               
+            
     # -------- Trainees
     with tabs[3]:
         if not (program and group):
