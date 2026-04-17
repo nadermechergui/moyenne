@@ -1092,6 +1092,72 @@ def staff_work_center():
             tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
             chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key="gr_tr_sel")
             trainee_id = norm(tr[tr["label"] == chosen].iloc[0]["trainee_id"])
+            st.markdown("### 🧮 Préparation des moyennes")
+
+            gr_all = read_df("Grades")
+
+            if not gr_all.empty:
+
+                df = gr_all.copy()
+
+                # تنظيف
+                df["score"] = df["score"].astype(str).str.replace(",", ".").astype(float)
+                df["exam_type"] = df["exam_type"].astype(str).str.strip()
+
+    # فلترة حسب المتربص
+                df = df[df["trainee_id"].astype(str).str.strip() == trainee_id]
+
+                if df.empty:
+                    st.warning("⚠️ ما فما حتى note")
+                else:
+
+                    df_sub = read_df("Subjects")
+
+                    results = []
+                    total = 0
+                    total_coef = 0
+
+                    for subject in df["subject_name"].unique():
+
+                        df_subj = df[df["subject_name"] == subject]
+
+            # 🔴 examen
+                        exam = df_subj[df_subj["exam_type"] == "Examen"]
+                        exam_score = exam["score"].iloc[0] if not exam.empty else 0
+
+            # 🟢 contrôles
+                        ctrl = df_subj[df_subj["exam_type"] != "Examen"]
+                        moyenne_ctrl = ctrl["score"].mean() if not ctrl.empty else 0
+
+            # 🟡 final
+                        final = (moyenne_ctrl * 0.4) + (exam_score * 0.6)
+
+            # 🔵 coefficient
+                        coef_row = df_sub[df_sub["subject_name"] == subject]
+                        coef = float(coef_row.iloc[0].get("coefficient", 1)) if not coef_row.empty else 1
+
+                        weighted = final * coef
+
+                        total += weighted
+                        total_coef += coef
+
+                        results.append({
+                            "Matière": subject,
+                            "Contrôle": round(moyenne_ctrl, 2),
+                            "Examen": exam_score,
+                            "Final": round(final, 2),
+                            "Coef": coef,
+                            "Note × Coef": round(weighted, 2)
+                        })
+
+                    df_result = pd.DataFrame(results)
+
+                    st.dataframe(df_result, use_container_width=True)
+
+        # 🎯 moyenne générale
+                    if total_coef > 0:
+                        moyenne = total / total_coef
+                        st.success(f"🎯 Moyenne Générale: {round(moyenne, 2)} / 20")        
             # ============================
     # 📊 عرض كل نوطات المتربص المختار
     # ============================
