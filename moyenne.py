@@ -767,7 +767,7 @@ def student_portal_center():
                 df = grf.copy()
 
                 df["note"] = pd.to_numeric(
-                    df["score"].astype(str).str.replace(",", "."),
+                    df["note"].astype(str).str.replace(",", "."),
                     errors="coerce"
                 )
 
