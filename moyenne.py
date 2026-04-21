@@ -2,7 +2,7 @@
 # ✅ Sidebar = Connexion Employé (à gauche)
 # ✅ Centre = Espace Stagiaire
 # ✅ Planning = الموظف يكتب (jour + وقت + matière + prof + couleur) والمتكون يشوف tableau ملون
-# ✅ Paiements = حسب السنوات (2025/2026...) + أشهر Jan..Dec
+# ✅ Paiements = حسب السنوات (2025/2026...) + أشهرdef render_candidate(): Jan..Dec
 # ✅ Supports de cours = روابط Google Drive (manual paste) + المتكون يلقى الدروس ويحملها
 # ✅ Import Excel stagiaires (full_name + phone)
 # ✅ CRUD: الموظف ينجم يزيد/يعدّل/يفسخ (Planning + Supports + Stagiaires + Notes + Paiements)
@@ -761,6 +761,79 @@ def student_portal_center():
                 grf = grf.sort_values(by=["date", "created_at"], ascending=False)
                 cols_show = [c for c in ["subject_name", "exam_type", "score", "date", "staff_name", "note"] if c in grf.columns]
                 st.dataframe(grf[cols_show], use_container_width=True, hide_index=True)
+
+# 🔥 حساب المعدلات كيف staff
+
+                df = grf.copy()
+
+                df["note"] = pd.to_numeric(
+                    df["score"].astype(str).str.replace(",", "."),
+                    errors="coerce"
+                )
+
+                df = df.dropna(subset=["note"])
+                df["exam_type"] = df["exam_type"].astype(str).str.strip()
+
+                results = []
+                total = 0
+                total_coef = 0
+
+                df_sub = read_df("Subjects")
+
+                for subject in df["subject_name"].unique():
+
+                    df_subj = df[df["subject_name"] == subject]
+
+                    exam = df_subj[df_subj["exam_type"] == "Examen"]
+                    exam_score = exam["note"].mean() if not exam.empty else 0
+
+                    ctrl = df_subj[df_subj["exam_type"] != "Examen"]
+                    moyenne_ctrl = ctrl["note"].mean() if not ctrl.empty else 0
+
+                    final = (moyenne_ctrl * 0.4) + (exam_score * 0.6)
+
+                    coef_row = df_sub[df_sub["subject_name"] == subject]
+                    coef = float(coef_row.iloc[0].get("coefficient", 1)) if not coef_row.empty else 1
+
+                    weighted = final * coef
+
+                    total += weighted
+                    total_coef += coef
+
+                    results.append({
+                        "Matière": subject,
+                        "Final": round(final, 2)
+                    })
+
+                df_result = pd.DataFrame(results)
+
+                # 🎯 moyenne générale
+                if total_coef > 0:
+                    moyenne = total / total_coef
+
+                    weak = df_result[df_result["Final"] < 10]
+
+                    st.markdown(f"""
+                    <div style="background:#ffe6e6;padding:15px;border-radius:10px">
+                    <h3 style="color:red;">📊 Moyenne Générale: {round(moyenne, 2)} / 20</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if not weak.empty:
+                        subjects = ", ".join(weak["Matière"].astype(str))
+
+                        st.markdown(f"""
+                        <div style="background:#ffcccc;padding:15px;border-radius:10px">
+                        <h4 style="color:red;">❌ Crédit (moins de 10):</h4>
+                        <p style="color:red;font-weight:bold;">{subjects}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                        <div style="background:#e6ffe6;padding:15px;border-radius:10px">
+                        <h4 style="color:green;">✅ Bravo! Aucun crédit 🎉</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
 
         with t2:
             y_default = today_year_str()
