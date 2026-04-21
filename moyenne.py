@@ -1158,28 +1158,28 @@ def staff_work_center():
 
                     st.dataframe(df_result, use_container_width=True)
 
-# 🎯 moyenne générale
-if total_coef > 0:
-    moyenne = total / total_coef
+                    # 🎯 moyenne générale
+                    if total_coef > 0:
+                        moyenne = total / total_coef
 
     # 🔴 المواد الضعيفة (Final < 10)
-    weak = df_result[df_result["Final"] < 10]
+                        weak = df_result[df_result["Final"] < 10]
 
-    st.markdown(f"""
-    <div style="background:#ffe6e6;padding:15px;border-radius:10px">
-    <h3 style="color:red;">📊 Moyenne Générale: {round(moyenne, 2)} / 20</h3>
-    </div>
-    """, unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="background:#ffe6e6;padding:15px;border-radius:10px">
+                        <h3 style="color:red;">📊 Moyenne Générale: {round(moyenne, 2)} / 20</h3>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-    if not weak.empty:
-        subjects = ", ".join(weak["Matière"].astype(str))
+                        if not weak.empty:
+                            subjects = ", ".join(weak["Matière"].astype(str))
 
-        st.markdown(f"""
-        <div style="background:#ffcccc;padding:15px;border-radius:10px">
-        <h4 style="color:red;">❌ Matières faibles (moins de 10):</h4>
-        <p style="color:red;font-weight:bold;">{subjects}</p>
-        </div>
-        """, unsafe_allow_html=True)        
+                            st.markdown(f"""
+                            <div style="background:#ffcccc;padding:15px;border-radius:10px">
+                            <h4 style="color:red;">❌ Matières faibles (moins de 10):</h4>
+                            <p style="color:red;font-weight:bold;">{subjects}</p>
+                            </div>
+                            """, unsafe_allow_html=True)        
             # ============================
     # 📊 عرض كل نوطات المتربص المختار
     # ============================
