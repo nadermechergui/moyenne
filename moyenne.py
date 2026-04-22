@@ -29,7 +29,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from reportlab.lib import colors
-
+import qrcode
 def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moyenne):
     c = canvas.Canvas(file_path, pagesize=A4)
     w, h = A4
@@ -112,7 +112,25 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
     c.setFont("Helvetica", 10)
     c.drawString(12*cm, y, "Signature")
     c.line(12*cm, y - 0.2*cm, 17*cm, y - 0.2*cm)
+    # ===== QR CODE =====
+    try:
+    # 🔗 الرابط اللي باش يتحل
+        verification_url = f"https://megaformation.tn/verify?name={name}&year={year}"
 
+        qr = qrcode.make(verification_url)
+
+        qr_path = "qr_temp.png"
+        qr.save(qr_path)
+
+    # 🧾 نحطو في PDF
+        c.drawImage(qr_path, 2*cm, 2*cm, width=3*cm, height=3*cm)
+
+    # نص صغير
+        c.setFont("Helvetica", 8)
+        c.drawString(2*cm, 1.5*cm, "Scan to verify")
+
+    except:
+        pass
     c.save()
 # =========================================================
 # CONFIG
