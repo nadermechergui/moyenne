@@ -1554,111 +1554,76 @@ def staff_work_center():
                     st.rerun()
 
             st.divider()
-            st.markdown("### 📋 Mes notes (حسب الاختصاص) — تعديل / حذف")
+            # =========================
+# 🔥 NEW EDIT SYSTEM
+# =========================
 
-            gr = read_df("Grades")
-            if gr.empty:
-                st.info("Aucune note.")
-                return
+st.markdown("### ✏️ Modifier note")
 
-            for c in ["grade_id", "branch", "program", "group", "staff_name", "trainee_id",
-                      "subject_name", "exam_type", "score", "date", "note", "created_at"]:
-                if c not in gr.columns:
-                    gr[c] = ""
+tr["label"] = tr["full_name"] + " — " + tr["trainee_id"]
 
-            # 🔥 تنظيف القيم (مهم)
-            gr["trainee_id"] = gr["trainee_id"].astype(str).str.strip()
-            trainee_id = str(trainee_id).strip()
+selected_tr = st.selectbox("👤 Stagiaire", tr["label"], key="edit_tr")
 
-# 🔥 الفلترة الصحيحة
-            grf = gr[
-                (gr["branch"].astype(str).str.strip() == staff_branch.strip()) &
-                (gr["program"].astype(str).str.strip() == norm(program)) &
-                (gr["group"].astype(str).str.strip() == norm(group)) &
-                (gr["staff_name"].astype(str).str.strip() == norm(staff_name)) &
-                (gr["trainee_id"] == trainee_id)   # ✅ هذا أهم سطر
-            ].copy()
+trainee_id = tr[tr["label"] == selected_tr].iloc[0]["trainee_id"]
+trainee_id = str(trainee_id).strip()
 
-            if grf.empty:
-                st.info("ما عندك حتى note مسجلة لهالاختصاص/المجموعة.")
-                return
+gr_all = read_df("Grades")
+gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
 
-            tr_map = {}
-            tr_tmp = tr.copy()
-            tr_tmp["trainee_id"] = tr_tmp["trainee_id"].astype(str).str.strip()
-            tr_tmp["full_name"] = tr_tmp["full_name"].astype(str).str.strip()
-            tr_map = dict(zip(tr_tmp["trainee_id"], tr_tmp["full_name"]))
+df_tr = gr_all[gr_all["trainee_id"] == trainee_id].copy()
 
-            grf["trainee_name"] = grf["trainee_id"].astype(str).map(lambda x: tr_map.get(norm(x), ""))
+if df_tr.empty:
+    st.warning("ما فما حتى note")
+    return
 
-            grf["date_sort"] = grf["date"].astype(str)
-            grf["created_sort"] = grf["created_at"].astype(str)
-            grf = grf.sort_values(by=["date_sort", "created_sort"], ascending=False)
-            grf = grf.reset_index(drop=True)
-            show_cols = [c for c in ["trainee_name", "subject_name", "exam_type", "score", "date", "note", "grade_id"] if c in grf.columns]
-            st.dataframe(grf[show_cols], use_container_width=True, hide_index=True)
+df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
+subjects = df_tr["subject_name"].unique().tolist()
 
-            st.divider()
+selected_subject = st.selectbox("📚 Matière", subjects)
 
-            # 🔥 اختيار المادة
-            subjects_list = grf["subject_name"].dropna().unique().tolist()
+df_sub = df_tr[df_tr["subject_name"] == selected_subject]
 
-            selected_subject = st.selectbox(
-    "اختر المادة",
-                subjects_list,
-                key="subject_select_edit"
-            )
+df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
+types = df_sub["exam_type"].unique().tolist()
 
-# 🔥 فلترة حسب المادة
-            df_subj = grf[grf["subject_name"] == selected_subject]
+selected_type = st.selectbox("🎯 Type", types)
 
-            if df_subj.empty:
-                st.warning("ما فماش note لهالمادة")
-                return
+df_final = df_sub[df_sub["exam_type"] == selected_type]
 
-# 🔥 اختيار نوع الإمتحان
-            exam_types = df_subj["exam_type"].dropna().unique().tolist()
+row = df_final.sort_values(by="date", ascending=False).iloc[0].to_dict()
+grade_id = str(row.get("grade_id")).strip()
 
-            selected_exam = st.selectbox(
-    "نوع الإمتحان",
-                exam_types,
-                key="exam_select_edit"
-)
+col1, col2 = st.columns(2)
 
-# 🔥 فلترة حسب النوع
-            df_final = df_subj[df_subj["exam_type"] == selected_exam]
+with col1:
+    st.text_input("Matière", value=row["subject_name"], disabled=True)
+    st.text_input("Type", value=row["exam_type"], disabled=True)
 
-            if df_final.empty:
-                st.warning("ما فماش note لهالنوع")
-                return
+    score_e = st.number_input(
+        "Note",
+        min_value=0.0,
+        max_value=20.0,
+        value=float(row.get("score") or 0),
+        step=0.25
+    )
 
-# 🔥 ناخذ آخر note
-            row = df_final.sort_values(by=["date_sort", "created_sort"], ascending=False).iloc[0].to_dict()
+with col2:
+    date_e = st.date_input("Date")
+    note_e = st.text_area("Remarque", value=row.get("note"))
 
-# 🔥 ID
-            grade_id = str(row.get("grade_id")).strip()
-            st.write("ID 👉", grade_id)            
-            col1, col2 = st.columns(2)
-            with col1:
-                subject_e = st.text_input("Matière", value=norm(row.get("subject_name")), key="gr_subject_edit")
-                exam_e = st.text_input("Type examen", value=norm(row.get("exam_type")), key="gr_exam_edit")
-                try:
-                    score_default = float(norm(row.get("note")) or 0)
-                except Exception:
-                    score_default = 0.0
-                score_e = st.number_input("Note", min_value=0.0, max_value=20.0, value=score_default, step=0.25, key="gr_score_edit")
+if st.button("💾 Sauvegarder"):
 
-            with col2:
-                try:
-                    d0 = datetime.fromisoformat(norm(row.get("date"))).date()
-                except Exception:
-                    d0 = datetime.now().date()
-                date_e = st.date_input("Date", value=d0, key="gr_date_edit")
-                note_e = st.text_area("Remarque", value=norm(row.get("note")), key="gr_note_edit")
+    ok = update_grade_row(grade_id, {
+        "score": str(score_e),
+        "date": str(date_e),
+        "note": note_e
+    })
 
-            csave, cdel = st.columns(2)
-            with csave:
-                if st.button("💾 Enregistrer modification", use_container_width=True, key="gr_update_btn"):
+    if ok:
+        st.success("✅ تم التعديل")
+        st.rerun()
+    else:
+        st.error("❌ مشكل")
                     ok = update_grade_row(grade_id, {
                         "subject_name": norm(subject_e),
                         "exam_type": norm(exam_e),
