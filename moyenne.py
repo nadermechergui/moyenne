@@ -1304,11 +1304,11 @@ def staff_work_center():
                             moyenne=(total / total_coef) if total_coef > 0 else 0
                         )
 
-    with open(file_path, "rb") as f:
-        st.download_button(
-            "📥 Télécharger Bulletin",
-            f,
-            file_name=f"bulletin_{trainee_id}.pdf"
+                        with open(file_path, "rb") as f:
+                            st.download_button(
+                                "📥 Télécharger Bulletin",
+                                f,
+                                file_name=f"bulletin_{trainee_id}.pdf"
                     # 🎯 moyenne générale
                     if total_coef > 0:
                         moyenne = total / total_coef
