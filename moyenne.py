@@ -28,20 +28,34 @@ time.sleep(0.5)
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
+from reportlab.lib import colors
 
 def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moyenne):
+
     c = canvas.Canvas(file_path, pagesize=A4)
-
     w, h = A4
-    y = h - 2*cm
 
-    # 🏫 Header
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(2*cm, y, "Bulletin de Notes")
-    y -= 1*cm
+    # 🎨 Background header
+    c.setFillColorRGB(0.8, 0, 0)  # أحمر
+    c.rect(0, h - 3*cm, w, 3*cm, fill=1)
+
+    # 🏫 Logo
+    try:
+        c.drawImage("logo.png", 1*cm, h - 2.8*cm, width=3*cm, height=2*cm)
+    except:
+        pass
+
+    # 🏷️ Title
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(6*cm, h - 1.8*cm, "BULLETIN DE NOTES")
+
+    y = h - 4*cm
 
     # 👤 Infos
+    c.setFillColor(colors.black)
     c.setFont("Helvetica", 11)
+
     c.drawString(2*cm, y, f"Nom & Prénom: {name}")
     y -= 0.6*cm
     c.drawString(2*cm, y, f"Spécialité: {program}")
@@ -49,31 +63,54 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
     c.drawString(2*cm, y, f"Groupe: {group}")
     y -= 0.6*cm
     c.drawString(2*cm, y, f"Année: {year}")
+
     y -= 1*cm
 
     # 📊 Table header
+    c.setFillColorRGB(0.8, 0, 0)
+    c.rect(2*cm, y, 14*cm, 0.7*cm, fill=1)
+
+    c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(2*cm, y, "Matière")
-    c.drawString(10*cm, y, "Note")
-    y -= 0.5*cm
-
-    c.setFont("Helvetica", 10)
-
-    # 📚 matières
-    for _, row in df_result.iterrows():
-        c.drawString(2*cm, y, str(row["Matière"]))
-        c.drawString(10*cm, y, str(row["Final"]))
-
-        if row["Final"] < 10:
-            c.drawString(12*cm, y, "Crédit")
-
-        y -= 0.5*cm
+    c.drawString(2.2*cm, y + 0.2*cm, "Matière")
+    c.drawString(10*cm, y + 0.2*cm, "Note")
+    c.drawString(13*cm, y + 0.2*cm, "Observation")
 
     y -= 1*cm
 
-    # 🎯 moyenne
-    c.setFont("Helvetica-Bold", 12)
+    # 📚 matières
+    c.setFont("Helvetica", 10)
+
+    for _, row in df_result.iterrows():
+        note = row["Final"]
+
+        c.setFillColor(colors.black)
+        c.drawString(2*cm, y, str(row["Matière"]))
+        c.drawString(10*cm, y, str(note))
+
+        # 🔴 Crédit
+        if note < 10:
+            c.setFillColor(colors.red)
+            c.drawString(13*cm, y, "Crédit")
+        else:
+            c.setFillColor(colors.green)
+            c.drawString(13*cm, y, "Validé")
+
+        y -= 0.6*cm
+
+    y -= 1*cm
+
+    # 🎯 Moyenne
+    c.setFont("Helvetica-Bold", 13)
+    c.setFillColor(colors.black)
     c.drawString(2*cm, y, f"Moyenne Générale: {round(moyenne, 2)} / 20")
+
+    y -= 1.5*cm
+
+    # ✍️ Signature
+    c.setFont("Helvetica", 10)
+    c.drawString(12*cm, y, "Signature")
+    c.line(12*cm, y - 0.2*cm, 17*cm, y - 0.2*cm)
 
     c.save()
 # =========================================================
