@@ -1594,18 +1594,29 @@ def staff_work_center():
 
             st.divider()
 
-            grf["label"] = (
-                grf["trainee_name"].astype(str) + " | " +
-                grf["subject_name"].astype(str) + " | " +
-                grf["exam_type"].astype(str) + " | " +
-                grf["score"].astype(str) + " | " +
-                grf["date"].astype(str) + " | " +
-                grf["grade_id"].astype(str)
-            )
+            options = []
 
-            pick = st.selectbox("اختر note للتعديل/الحذف", grf["label"].tolist(), key="gr_pick_edit")
-            row = grf[grf["label"] == pick].iloc[0].to_dict()
-            grade_id = norm(row.get("grade_id"))
+            for i, r in grf.iterrows():
+                label = (
+                    f"{r['trainee_name']} | "
+                    f"{r['subject_name']} | "
+                    f"{r['exam_type']} | "
+                    f"{r['score']} | "
+                    f"{r['date']} | "
+                    f"{r['grade_id']}"
+    )
+                options.append((label, i))
+
+            pick_label = st.selectbox(
+    "اختر note للتعديل/الحذف",
+                [opt[0] for opt in options],
+                key="gr_pick_edit"
+)
+
+# 🔥 أهم سطر
+            selected_index = dict(options)[pick_label]
+
+            row = grf.loc[selected_index].to_dict()
 
             col1, col2 = st.columns(2)
             with col1:
