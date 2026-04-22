@@ -1601,7 +1601,7 @@ def staff_work_center():
                     f"{r['trainee_name']} | "
                     f"{r['subject_name']} | "
                     f"{r['exam_type']} | "
-                    f"{r['score']} | "
+                    f"{r['note']} | "
                     f"{r['date']} | "
                     f"{r['grade_id']}"
     )
