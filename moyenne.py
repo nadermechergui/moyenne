@@ -1594,28 +1594,42 @@ def staff_work_center():
 
             st.divider()
 
-            options = []
+            # 🔥 اختيار المادة
+            subjects_list = grf["subject_name"].dropna().unique().tolist()
 
-            for i, r in grf.iterrows():
-                label = (
-                    f"{r['trainee_name']} | "
-                    f"{r['subject_name']} | "
-                    f"{r['exam_type']} | "
-                    f"{r['note']} | "
-                    f"{r['date']} | "
-                    f"{r['grade_id']}"
-    )
-                options.append((label, i))
+            selected_subject = st.selectbox(
+    "اختر المادة",
+                subjects_list,
+                key="subject_select_edit"
+            )
 
-            pick_label = st.selectbox(
-    "اختر note للتعديل/الحذف",
-                [opt[0] for opt in options],
-                key="gr_pick_edit"
+# 🔥 فلترة حسب المادة
+            df_subj = grf[grf["subject_name"] == selected_subject]
+
+            if df_subj.empty:
+                st.warning("ما فماش note لهالمادة")
+                return
+
+# 🔥 اختيار نوع الإمتحان
+            exam_types = df_subj["exam_type"].dropna().unique().tolist()
+
+            selected_exam = st.selectbox(
+    "نوع الإمتحان",
+                exam_types,
+                key="exam_select_edit"
 )
-            # 🔥 أهم سطر
-            selected_index = dict(options)[pick_label]
 
-            row = grf.loc[selected_index].to_dict()
+# 🔥 فلترة حسب النوع
+            df_final = df_subj[df_subj["exam_type"] == selected_exam]
+
+            if df_final.empty:
+                st.warning("ما فماش note لهالنوع")
+                return
+
+# 🔥 ناخذ آخر note
+            row = df_final.sort_values(by=["date_sort", "created_sort"], ascending=False).iloc[0].to_dict()
+
+# 🔥 ID
             grade_id = str(row.get("grade_id")).strip()
             st.write("ID 👉", grade_id)            
             col1, col2 = st.columns(2)
