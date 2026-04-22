@@ -1623,7 +1623,7 @@ def staff_work_center():
                 subject_e = st.text_input("Matière", value=norm(row.get("subject_name")), key="gr_subject_edit")
                 exam_e = st.text_input("Type examen", value=norm(row.get("exam_type")), key="gr_exam_edit")
                 try:
-                    score_default = float(norm(row.get("score")) or 0)
+                    score_default = float(norm(row.get("note")) or 0)
                 except Exception:
                     score_default = 0.0
                 score_e = st.number_input("Note", min_value=0.0, max_value=20.0, value=score_default, step=0.25, key="gr_score_edit")
@@ -1642,7 +1642,7 @@ def staff_work_center():
                     ok = update_grade_row(grade_id, {
                         "subject_name": norm(subject_e),
                         "exam_type": norm(exam_e),
-                        "score": str(score_e),
+                        "note": str(score_e),
                         "date": str(date_e),
                         "note": norm(note_e),
                         "staff_name": staff_name,
