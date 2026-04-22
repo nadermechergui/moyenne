@@ -25,6 +25,57 @@ from gspread.exceptions import APIError
 from PIL import Image
 import time
 time.sleep(0.5)
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
+
+def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moyenne):
+    c = canvas.Canvas(file_path, pagesize=A4)
+
+    w, h = A4
+    y = h - 2*cm
+
+    # 🏫 Header
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(2*cm, y, "Bulletin de Notes")
+    y -= 1*cm
+
+    # 👤 Infos
+    c.setFont("Helvetica", 11)
+    c.drawString(2*cm, y, f"Nom & Prénom: {name}")
+    y -= 0.6*cm
+    c.drawString(2*cm, y, f"Spécialité: {program}")
+    y -= 0.6*cm
+    c.drawString(2*cm, y, f"Groupe: {group}")
+    y -= 0.6*cm
+    c.drawString(2*cm, y, f"Année: {year}")
+    y -= 1*cm
+
+    # 📊 Table header
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(2*cm, y, "Matière")
+    c.drawString(10*cm, y, "Note")
+    y -= 0.5*cm
+
+    c.setFont("Helvetica", 10)
+
+    # 📚 matières
+    for _, row in df_result.iterrows():
+        c.drawString(2*cm, y, str(row["Matière"]))
+        c.drawString(10*cm, y, str(row["Final"]))
+
+        if row["Final"] < 10:
+            c.drawString(12*cm, y, "Crédit")
+
+        y -= 0.5*cm
+
+    y -= 1*cm
+
+    # 🎯 moyenne
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2*cm, y, f"Moyenne Générale: {round(moyenne, 2)} / 20")
+
+    c.save()
 # =========================================================
 # CONFIG
 # =========================================================
@@ -1230,7 +1281,34 @@ def staff_work_center():
                     df_result = pd.DataFrame(results)
 
                     st.dataframe(df_result, use_container_width=True)
+                    # 🖨️ BOUTON ICI
+                    import os
 
+                    pdf_dir = "bulletins"
+                    os.makedirs(pdf_dir, exist_ok=True)
+
+                    file_path = os.path.join(
+                        pdf_dir,
+                        f"bulletin_{trainee_id}.pdf"
+                    )
+
+                    if st.button("🖨️ Imprimer Bulletin"):
+
+                        generate_bulletin_pdf(
+                            file_path=file_path,
+                            name=chosen,
+                            program=program,
+                            group=group,
+                            year=year,
+                            df_result=df_result,
+                            moyenne=(total / total_coef) if total_coef > 0 else 0
+                        )
+
+    with open(file_path, "rb") as f:
+        st.download_button(
+            "📥 Télécharger Bulletin",
+            f,
+            file_name=f"bulletin_{trainee_id}.pdf"
                     # 🎯 moyenne générale
                     if total_coef > 0:
                         moyenne = total / total_coef
