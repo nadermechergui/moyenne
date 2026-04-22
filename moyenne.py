@@ -30,6 +30,89 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 import qrcode
+import pandas as pd
+from io import BytesIO
+
+def generate_excel_template(trainee_id, subjects):
+    data = []
+
+    for sub in subjects:
+        data.append({
+            "trainee_id": trainee_id,
+            "subject_name": sub,
+            "exam_type": "",
+            "note": ""
+        })
+
+    df = pd.DataFrame(data)
+
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name="Notes")
+
+        workbook  = writer.book
+        worksheet = writer.sheets["Notes"]
+
+        # 🎨 formats
+        header_format = workbook.add_format({
+            "bold": True,
+            "bg_color": "#C00000",
+            "color": "white",
+            "border": 1
+        })
+
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+
+        # 📏 largeur colonnes
+        worksheet.set_column("A:A", 20)
+        worksheet.set_column("B:B", 35)
+        worksheet.set_column("C:C", 20)
+        worksheet.set_column("D:D", 10)
+
+        # 🔽 dropdown exam_type
+        worksheet.data_validation(
+            "C2:C100",
+            {
+                "validate": "list",
+                "source": ["Examen", "Contrôle", "Oral"]
+            }
+        )
+
+        # 🔢 validation note (0 → 20)
+        worksheet.data_validation(
+            "D2:D100",
+            {
+                "validate": "decimal",
+                "criteria": "between",
+                "minimum": 0,
+                "maximum": 20
+            }
+        )
+
+        # 🟢🔴 colors automatique
+        worksheet.conditional_format(
+            "D2:D100",
+            {
+                "type": "cell",
+                "criteria": ">=",
+                "value": 10,
+                "format": workbook.add_format({"bg_color": "#C6EFCE"})
+            }
+        )
+
+        worksheet.conditional_format(
+            "D2:D100",
+            {
+                "type": "cell",
+                "criteria": "<",
+                "value": 10,
+                "format": workbook.add_format({"bg_color": "#FFC7CE"})
+            }
+        )
+
+    return output.getvalue()
 def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moyenne):
     c = canvas.Canvas(file_path, pagesize=A4)
     w, h = A4
@@ -1272,7 +1355,16 @@ def staff_work_center():
             tr["label"] = tr["full_name"].astype(str) + " — " + tr["phone"].astype(str) + " — " + tr["trainee_id"].astype(str)
             chosen = st.selectbox("Stagiaire", tr["label"].tolist(), key="gr_tr_sel")
             trainee_id = norm(tr[tr["label"] == chosen].iloc[0]["trainee_id"])
-            st.markdown("### 🧮 Préparation des moyennes")
+            subjects_list = sub["subject_name"].tolist()
+
+            excel_file = generate_excel_template(trainee_id, subjects_list)
+
+            st.download_button(
+    "📥 Télécharger Excel Pro",
+                data=excel_file,
+                file_name=f"notes_{trainee_id}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)            st.markdown("### 🧮 Préparation des moyennes")
 
             gr_all = read_df("Grades")
 
