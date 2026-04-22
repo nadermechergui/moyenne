@@ -1558,72 +1558,72 @@ def staff_work_center():
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
-st.markdown("### ✏️ Modifier note")
+            st.markdown("### ✏️ Modifier note")
 
-tr["label"] = tr["full_name"] + " — " + tr["trainee_id"]
+            tr["label"] = tr["full_name"] + " — " + tr["trainee_id"]
 
-selected_tr = st.selectbox("👤 Stagiaire", tr["label"], key="edit_tr")
+            selected_tr = st.selectbox("👤 Stagiaire", tr["label"], key="edit_tr")
 
-trainee_id = tr[tr["label"] == selected_tr].iloc[0]["trainee_id"]
-trainee_id = str(trainee_id).strip()
+            trainee_id = tr[tr["label"] == selected_tr].iloc[0]["trainee_id"]
+            trainee_id = str(trainee_id).strip()
 
-gr_all = read_df("Grades")
-gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
+            gr_all = read_df("Grades")
+            gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
 
-df_tr = gr_all[gr_all["trainee_id"] == trainee_id].copy()
+            df_tr = gr_all[gr_all["trainee_id"] == trainee_id].copy()
 
-if df_tr.empty:
-    st.warning("ما فما حتى note")
-    return
+            if df_tr.empty:
+                  st.warning("ما فما حتى note")
+                return
 
-df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
-subjects = df_tr["subject_name"].unique().tolist()
+            df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
+            subjects = df_tr["subject_name"].unique().tolist()
 
-selected_subject = st.selectbox("📚 Matière", subjects)
+            selected_subject = st.selectbox("📚 Matière", subjects)
 
-df_sub = df_tr[df_tr["subject_name"] == selected_subject]
+            df_sub = df_tr[df_tr["subject_name"] == selected_subject]
 
-df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
-types = df_sub["exam_type"].unique().tolist()
+            df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
+            types = df_sub["exam_type"].unique().tolist()
 
-selected_type = st.selectbox("🎯 Type", types)
+            selected_type = st.selectbox("🎯 Type", types)
 
-df_final = df_sub[df_sub["exam_type"] == selected_type]
+            df_final = df_sub[df_sub["exam_type"] == selected_type]
 
-row = df_final.sort_values(by="date", ascending=False).iloc[0].to_dict()
-grade_id = str(row.get("grade_id")).strip()
+            row = df_final.sort_values(by="date", ascending=False).iloc[0].to_dict()
+            grade_id = str(row.get("grade_id")).strip()
 
-col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
 
-with col1:
-    st.text_input("Matière", value=row["subject_name"], disabled=True)
-    st.text_input("Type", value=row["exam_type"], disabled=True)
+            with col1:
+                st.text_input("Matière", value=row["subject_name"], disabled=True)
+                st.text_input("Type", value=row["exam_type"], disabled=True)
 
-    score_e = st.number_input(
-        "Note",
-        min_value=0.0,
-        max_value=20.0,
-        value=float(row.get("score") or 0),
-        step=0.25
+                score_e = st.number_input(
+                    "Note",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(row.get("score") or 0),
+                    step=0.25
     )
 
-with col2:
-    date_e = st.date_input("Date")
-    note_e = st.text_area("Remarque", value=row.get("note"))
+            with col2:
+                date_e = st.date_input("Date")
+                note_e = st.text_area("Remarque", value=row.get("note"))
 
-if st.button("💾 Sauvegarder"):
+            if st.button("💾 Sauvegarder"):
 
-    ok = update_grade_row(grade_id, {
-        "score": str(score_e),
-        "date": str(date_e),
-        "note": note_e
+                ok = update_grade_row(grade_id, {
+                    "score": str(score_e),
+                    "date": str(date_e),
+                    "note": note_e
     })
 
-    if ok:
-        st.success("✅ تم التعديل")
-        st.rerun()
-    else:
-        st.error("❌ مشكل")
+                if ok:
+                    st.success("✅ تم التعديل")
+                    st.rerun()
+                else:
+                    st.error("❌ مشكل")
                     ok = update_grade_row(grade_id, {
                         "subject_name": norm(subject_e),
                         "exam_type": norm(exam_e),
