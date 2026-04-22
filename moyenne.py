@@ -1612,7 +1612,8 @@ def staff_work_center():
                 [opt[0] for opt in options],
                 key="gr_pick_edit"
 )
-
+            selected_index = dict(options)[pick_label]
+            row = grf.loc[selected_index].to_dict()
 # 🔥 أهم سطر
             selected_index = dict(options)[pick_label]
 
