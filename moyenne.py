@@ -1574,7 +1574,7 @@ def staff_work_center():
 
             if df_tr.empty:
                   st.warning("ما فما حتى note")
-                return
+                  return
 
             df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
             subjects = df_tr["subject_name"].unique().tolist()
