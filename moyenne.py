@@ -31,29 +31,26 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 
 def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moyenne):
-
     c = canvas.Canvas(file_path, pagesize=A4)
     w, h = A4
 
-    # 🎨 Background header
-    c.setFillColorRGB(0.8, 0, 0)  # أحمر
+    # ===== HEADER RED =====
+    c.setFillColorRGB(0.85, 0, 0)
     c.rect(0, h - 3*cm, w, 3*cm, fill=1)
 
-    # 🏫 Logo
-    
-
-    # 🏷️ Title
+    # ===== LOGO =====
     try:
-        c.drawImage("logo.png", 1*cm, h - 2.8*cm, width=3*cm, height=2*cm)
+        c.drawImage("logo.png", 1*cm, h - 2.7*cm, width=2.5*cm, height=2.5*cm, mask='auto')
     except:
         pass
+
+    # ===== TITLE =====
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 18)
     c.drawString(6*cm, h - 1.8*cm, "BULLETIN DE NOTES")
 
+    # ===== INFOS =====
     y = h - 4*cm
-
-    # 👤 Infos
     c.setFillColor(colors.black)
     c.setFont("Helvetica", 11)
 
@@ -67,8 +64,8 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
 
     y -= 1*cm
 
-    # 📊 Table header
-    c.setFillColorRGB(0.8, 0, 0)
+    # ===== TABLE HEADER =====
+    c.setFillColorRGB(0.85, 0, 0)
     c.rect(2*cm, y, 14*cm, 0.7*cm, fill=1)
 
     c.setFillColor(colors.white)
@@ -79,17 +76,20 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
 
     y -= 1*cm
 
-    # 📚 matières
+    # ===== ROWS =====
     c.setFont("Helvetica", 10)
 
     for _, row in df_result.iterrows():
-        note = row["Final"]
+        note = float(row["Final"])
 
+        # Matière
         c.setFillColor(colors.black)
         c.drawString(2*cm, y, str(row["Matière"]))
-        c.drawString(10*cm, y, str(note))
 
-        # 🔴 Crédit
+        # Note
+        c.drawString(10*cm, y, f"{note:.2f}")
+
+        # Observation
         if note < 10:
             c.setFillColor(colors.red)
             c.drawString(13*cm, y, "Crédit")
@@ -101,14 +101,14 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
 
     y -= 1*cm
 
-    # 🎯 Moyenne
-    c.setFont("Helvetica-Bold", 13)
+    # ===== MOYENNE =====
     c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 13)
     c.drawString(2*cm, y, f"Moyenne Générale: {round(moyenne, 2)} / 20")
 
     y -= 1.5*cm
 
-    # ✍️ Signature
+    # ===== SIGNATURE =====
     c.setFont("Helvetica", 10)
     c.drawString(12*cm, y, "Signature")
     c.line(12*cm, y - 0.2*cm, 17*cm, y - 0.2*cm)
