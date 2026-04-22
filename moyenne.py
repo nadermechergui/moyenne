@@ -36,16 +36,17 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
     w, h = A4
 
     # 🎨 Background header
-    c.setFillColorRGB(0.2, 0, 0)  # أحمر
+    c.setFillColorRGB(0.8, 0, 0)  # أحمر
     c.rect(0, h - 3*cm, w, 3*cm, fill=1)
 
     # 🏫 Logo
+    
+
+    # 🏷️ Title
     try:
         c.drawImage("logo.png", 1*cm, h - 2.8*cm, width=3*cm, height=2*cm)
     except:
         pass
-
-    # 🏷️ Title
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 18)
     c.drawString(6*cm, h - 1.8*cm, "BULLETIN DE NOTES")
