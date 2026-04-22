@@ -1616,7 +1616,8 @@ def staff_work_center():
             selected_index = dict(options)[pick_label]
 
             row = grf.loc[selected_index].to_dict()
-
+            grade_id = str(row.get("grade_id")).strip()
+            st.write("ID 👉", grade_id)            
             col1, col2 = st.columns(2)
             with col1:
                 subject_e = st.text_input("Matière", value=norm(row.get("subject_name")), key="gr_subject_edit")
