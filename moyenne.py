@@ -1566,11 +1566,17 @@ def staff_work_center():
                 if c not in gr.columns:
                     gr[c] = ""
 
+            # 🔥 تنظيف القيم (مهم)
+            gr["trainee_id"] = gr["trainee_id"].astype(str).str.strip()
+            trainee_id = str(trainee_id).strip()
+
+# 🔥 الفلترة الصحيحة
             grf = gr[
-                (gr["branch"].astype(str).str.strip() == staff_branch) &
+                (gr["branch"].astype(str).str.strip() == staff_branch.strip()) &
                 (gr["program"].astype(str).str.strip() == norm(program)) &
                 (gr["group"].astype(str).str.strip() == norm(group)) &
-                (gr["staff_name"].astype(str).str.strip() == norm(staff_name))
+                (gr["staff_name"].astype(str).str.strip() == norm(staff_name)) &
+                (gr["trainee_id"] == trainee_id)   # ✅ هذا أهم سطر
             ].copy()
 
             if grf.empty:
