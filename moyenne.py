@@ -1588,7 +1588,7 @@ def staff_work_center():
             grf["date_sort"] = grf["date"].astype(str)
             grf["created_sort"] = grf["created_at"].astype(str)
             grf = grf.sort_values(by=["date_sort", "created_sort"], ascending=False)
-
+            grf = grf.reset_index(drop=True)
             show_cols = [c for c in ["trainee_name", "subject_name", "exam_type", "score", "date", "note", "grade_id"] if c in grf.columns]
             st.dataframe(grf[show_cols], use_container_width=True, hide_index=True)
 
