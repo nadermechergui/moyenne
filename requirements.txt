@@ -10,3 +10,4 @@ openpyxl
 requests
 reportlab
 qrcode[pil]
+xlsxwriter
