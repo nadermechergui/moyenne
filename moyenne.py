@@ -1612,9 +1612,7 @@ def staff_work_center():
                 [opt[0] for opt in options],
                 key="gr_pick_edit"
 )
-            selected_index = dict(options)[pick_label]
-            row = grf.loc[selected_index].to_dict()
-# 🔥 أهم سطر
+            # 🔥 أهم سطر
             selected_index = dict(options)[pick_label]
 
             row = grf.loc[selected_index].to_dict()
@@ -1643,7 +1641,7 @@ def staff_work_center():
                     ok = update_grade_row(grade_id, {
                         "subject_name": norm(subject_e),
                         "exam_type": norm(exam_e),
-                        "note": str(score_e),
+                        "score": str(score_e),
                         "date": str(date_e),
                         "note": norm(note_e),
                         "staff_name": staff_name,
