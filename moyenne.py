@@ -36,7 +36,7 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
     w, h = A4
 
     # 🎨 Background header
-    c.setFillColorRGB(0.8, 0, 0)  # أحمر
+    c.setFillColorRGB(0.2, 0, 0)  # أحمر
     c.rect(0, h - 3*cm, w, 3*cm, fill=1)
 
     # 🏫 Logo
