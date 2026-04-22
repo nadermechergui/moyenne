@@ -1309,6 +1309,7 @@ def staff_work_center():
                                 "📥 Télécharger Bulletin",
                                 f,
                                 file_name=f"bulletin_{trainee_id}.pdf"
+                            )
                     # 🎯 moyenne générale
                     if total_coef > 0:
                         moyenne = total / total_coef
