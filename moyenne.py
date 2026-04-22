@@ -1364,7 +1364,8 @@ def staff_work_center():
                 data=excel_file,
                 file_name=f"notes_{trainee_id}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)            st.markdown("### 🧮 Préparation des moyennes")
+)           
+            st.markdown("### 🧮 Préparation des moyennes")
 
             gr_all = read_df("Grades")
 
