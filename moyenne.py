@@ -1638,15 +1638,19 @@ def staff_work_center():
                     else:
                         st.error("❌ Échec (grade_id introuvable).")
 
-            with cdel:
-                if st.button("🗑️ Supprimer note", use_container_width=True, key="gr_delete_btn"):
-                    ok = delete_grade_row(grade_id)
-                    if ok:
-                        st.success("✅ Note supprimée.")
-                        st.rerun()
-                    else:
-                        st.error("❌ Échec suppression (grade_id introuvable).")
+            if st.button("💾 Sauvegarder"):
 
+                ok = update_grade_row(grade_id, {
+                    "score": str(score_e),
+                    "date": str(date_e),
+                    "note": note_e
+    })
+
+                if ok:
+                    st.success("✅ تم التعديل")
+                    st.rerun()
+                else:
+                    st.error("❌ مشكل")
     # -------- Payments
     with tabs[5]:
         if not (program and group):
