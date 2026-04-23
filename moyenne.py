@@ -1569,7 +1569,7 @@ def staff_work_center():
             else:
                 gr_edit["subject_name"] = gr_edit["subject_name"].astype(str).str.strip()
 
-                 subjects = gr_edit["subject_name"].unique().tolist()
+                subjects = gr_edit["subject_name"].unique().tolist()
 
                 selected_subject = st.selectbox("📚 Matière", subjects, key="edit_subject")
 
