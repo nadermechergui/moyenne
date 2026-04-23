@@ -1637,7 +1637,7 @@ def staff_work_center():
                         st.rerun()
                     else:
                         st.error("❌ Échec (grade_id introuvable).")
-            with cdel:
+            
             if st.button("💾 Sauvegarder"):
 
                 ok = update_grade_row(grade_id, {
