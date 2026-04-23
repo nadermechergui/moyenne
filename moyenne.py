@@ -1503,7 +1503,7 @@ def staff_work_center():
 
         if gr_view.empty:
             st.info("⚠️ ما فما حتى note لهالمتربص.")
-        else:
+        
             # ترتيب
             gr_view["date_sort"] = gr_view["date"].astype(str)
             gr_view = gr_view.sort_values(by="date_sort", ascending=False)
