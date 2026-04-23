@@ -1526,7 +1526,6 @@ def staff_work_center():
                 hide_index=True
             )
             subjects = sorted([x for x in sub.get("subject_name", pd.Series([], dtype=str)).astype(str).str.strip().tolist() if x])
-            st.divider()
             subject_name = st.selectbox("Matière", subjects, key="gr_sub_sel")
             exam_type = st.text_input("Type examen (DS1/TP/Examen...)", key="gr_exam")
             score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25, key="gr_score")
@@ -1553,6 +1552,7 @@ def staff_work_center():
                     })
                     st.success("✅ Note enregistrée.")
                     st.rerun()
+            st.divider()
             # =========================
             
 # ✏️ MODIFIER NOTE
