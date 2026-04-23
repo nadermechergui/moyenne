@@ -1484,175 +1484,99 @@ def staff_work_center():
             # ============================
     # 📊 عرض كل نوطات المتربص المختار
     # ============================
-    st.markdown("### 📊 Notes du stagiaire sélectionné")
-
-    gr_all = read_df("Grades")
-
-    if not gr_all.empty:
-        # تأكد من الأعمدة
-        for c in ["trainee_id", "subject_name", "exam_type", "score", "date", "note"]:
-            if c not in gr_all.columns:
-                gr_all[c] = ""
-
-        gr_view = gr_all[
-            (gr_all["trainee_id"].astype(str).str.strip() == trainee_id) &
-            (gr_all["branch"].astype(str).str.strip() == staff_branch) &
-            (gr_all["program"].astype(str).str.strip() == norm(program)) &
-            (gr_all["group"].astype(str).str.strip() == norm(group))
-        ].copy()
-
-        if gr_view.empty:
-            st.info("⚠️ ما فما حتى note لهالمتربص.")
-        
-            # ترتيب
-            gr_view["date_sort"] = gr_view["date"].astype(str)
-            gr_view = gr_view.sort_values(by="date_sort", ascending=False)
-
-            st.dataframe(
-                gr_view[[
-                    "subject_name",
-                    "exam_type",
-                    "score",
-                    "date",
-                    "note"
-                ]].rename(columns={
-                    "subject_name": "📚 المادة",
-                    "exam_type": "📝 نوع الامتحان",
-                    "score": "🎯 النوط",
-                    "date": "📅 التاريخ",
-                    "note": "💬 ملاحظة"
-                }),
-                use_container_width=True,
-                hide_index=True
-            )
-            subjects = sorted([x for x in sub.get("subject_name", pd.Series([], dtype=str)).astype(str).str.strip().tolist() if x])
-            subject_name = st.selectbox("Matière", subjects, key="gr_sub_sel")
-            exam_type = st.text_input("Type examen (DS1/TP/Examen...)", key="gr_exam")
-            score = st.number_input("Note", min_value=0.0, max_value=20.0, value=10.0, step=0.25, key="gr_score")
-            d = st.date_input("Date", value=datetime.now().date(), key="gr_date")
-            note = st.text_area("Remarque", key="gr_note")
-
-            if st.button("✅ Enregistrer la note", use_container_width=True, key="gr_save_btn"):
-                if not norm(exam_type):
-                    st.error("Type examen obligatoire.")
-                else:
-                    append_row("Grades", {
-                        "grade_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
-                        "trainee_id": trainee_id,
-                        "branch": staff_branch,
-                        "program": norm(program),
-                        "group": norm(group),
-                        "subject_name": norm(subject_name),
-                        "exam_type": norm(exam_type),
-                        "score": str(score),
-                        "date": str(d),
-                        "staff_name": staff_name,
-                        "note": norm(note),
-                        "created_at": now_str(),
-                    })
-                    st.success("✅ Note enregistrée.")
-                    st.rerun()
-            # ➕ Ajouter note
+# =========================
+# 📊 NOTES DU STAGIAIRE
 # =========================
 
-            st.markdown("### ➕ Ajouter une note")
+st.markdown("### 📊 Notes du stagiaire sélectionné")
 
-# نفس المتربص المختار فوق
-# لازم يكون عندك trainee_id موجود
+gr_all = read_df("Grades")
 
-            subjects_list = sub["subject_name"].dropna().unique().tolist()
+gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
 
-            new_subject = st.selectbox("📚 Matière", subjects_list, key="new_subject")
+gr_view = gr_all[
+    (gr_all["trainee_id"] == trainee_id) &
+    (gr_all["branch"].astype(str).str.strip() == staff_branch) &
+    (gr_all["program"].astype(str).str.strip() == norm(program)) &
+    (gr_all["group"].astype(str).str.strip() == norm(group))
+].copy()
 
-            new_type = st.selectbox("🎯 Type", ["Examen", "Contrôle", "Oral"], key="new_type")
+if gr_view.empty:
+    st.info("⚠️ ما فما حتى note لهالمتربص.")
+else:
+    st.dataframe(
+        gr_view[["subject_name","exam_type","score","date","note"]],
+        use_container_width=True,
+        hide_index=True
+    )
 
-            new_score = st.number_input("Note", min_value=0.0, max_value=20.0, step=0.25, key="new_score")
+# =========================
+# ➕ AJOUT NOTE (ديما يخدم)
+# =========================
 
-            new_date = st.date_input("Date", key="new_date")
+st.divider()
+st.markdown("### ➕ Ajouter une note")
 
-            new_note = st.text_area("Remarque", key="new_note")
+subjects = sub["subject_name"].dropna().unique().tolist()
 
-            if st.button("➕ Ajouter", key="add_note_btn"):
+subject_name = st.selectbox("📚 Matière", subjects, key="add_sub")
+exam_type = st.selectbox("🎯 Type", ["Examen","Contrôle","Oral"], key="add_exam")
+score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
+d = st.date_input("Date", key="add_date")
+note = st.text_area("Remarque", key="add_note")
 
-                add_grade_row({
-                    "trainee_id": trainee_id,
-                    "subject_name": new_subject,
-                    "exam_type": new_type,
-                    "score": str(new_score),
-                    "date": str(new_date),
-                    "note": new_note,
-                    "staff_name": staff_name
-                })
+if st.button("➕ Ajouter", key="add_btn"):
 
-                st.success("✅ تم إضافة note")
-                st.rerun()
-            st.divider()
-            # =========================
+    append_row("Grades", {
+        "grade_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
+        "trainee_id": trainee_id,
+        "branch": staff_branch,
+        "program": norm(program),
+        "group": norm(group),
+        "subject_name": subject_name,
+        "exam_type": exam_type,
+        "score": str(score),
+        "date": str(d),
+        "note": note,
+        "staff_name": staff_name,
+        "created_at": now_str(),
+    })
 
-            # =========================
-            
+    st.success("✅ Note ajoutée")
+    st.rerun()
+
+# =========================
 # ✏️ MODIFIER NOTE
 # =========================
 
-            st.markdown("### ✏️ Modifier note")
+if not gr_view.empty:
 
-# نفس المتربص المختار
-            gr_edit = gr_view.copy()
+    st.divider()
+    st.markdown("### ✏️ Modifier note")
 
-            if gr_edit.empty:
-                st.info("⚠️ ما فما حتى note للتعديل")
-            else:
-                gr_edit["subject_name"] = gr_edit["subject_name"].astype(str).str.strip()
+    gr_view["label"] = (
+        gr_view["subject_name"] + " | " +
+        gr_view["exam_type"] + " | " +
+        gr_view["score"].astype(str) + " | " +
+        gr_view["date"]
+    )
 
-                subjects = gr_edit["subject_name"].unique().tolist()
+    selected = st.selectbox("اختر note", gr_view["label"], key="edit_select")
 
-                selected_subject = st.selectbox("📚 Matière", subjects, key="edit_subject")
+    row = gr_view[gr_view["label"] == selected].iloc[0]
 
-                df_sub = gr_edit[gr_edit["subject_name"] == selected_subject]
+    grade_id = row["grade_id"]
 
-                df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
-                types = df_sub["exam_type"].unique().tolist()
+    score_e = st.number_input("Note", 0.0, 20.0, float(row["score"]), key="edit_score")
 
-                selected_type = st.selectbox("🎯 Type", types, key="edit_type")
+    if st.button("💾 Sauvegarder", key="edit_btn"):
 
-                df_final = df_sub[df_sub["exam_type"] == selected_type]
-
-                row = df_final.sort_values(by="date", ascending=False).iloc[0].to_dict()
-
-                grade_id = str(row.get("grade_id")).strip()
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.text_input("Matière", value=row["subject_name"], disabled=True)
-                    st.text_input("Type", value=row["exam_type"], disabled=True)
-
-                    score_e = st.number_input(
-                        "Note",
-                        min_value=0.0,
-                        max_value=20.0,
-                        value=float(row.get("score") or 0),
-                        step=0.25,
-                        key="edit_score"
-        )
-
-                with col2:
-                    date_e = st.date_input("Date", key="edit_date")
-                    note_e = st.text_area("Remarque", value=row.get("note"), key="edit_note")
-
-                if st.button("💾 Sauvegarder", key="edit_save_btn"):
-
-                    ok = update_grade_row(grade_id, {
-                        "score": str(score_e),
-                        "date": str(date_e),
-                        "note": note_e
+        update_grade_row(grade_id, {
+            "score": str(score_e)
         })
 
-                    if ok:
-                        st.success("✅ تم التعديل")
-                        st.rerun()
-                    else:
-                        st.error("❌ مشكل في التعديل")
+        st.success("✅ تم التعديل")
+        st.rerun()
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
