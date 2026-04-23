@@ -1635,9 +1635,7 @@ def staff_work_center():
 
             df_tr = gr_all[gr_all["trainee_id"] == trainee_id].copy()
 
-            if df_tr.empty:
-                  st.warning("ما فما حتى note")
-                  return
+           
 
             df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
             subjects = df_tr["subject_name"].unique().tolist()
