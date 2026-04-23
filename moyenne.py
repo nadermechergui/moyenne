@@ -1561,11 +1561,11 @@ def staff_work_center():
             gr_view["date"]
     )
 
-    selected = st.selectbox("اختر note", gr_view["label"], key="edit_select")
+        selected = st.selectbox("اختر note", gr_view["label"], key="edit_select")
 
-    row = gr_view[gr_view["label"] == selected].iloc[0]
+        row = gr_view[gr_view["label"] == selected].iloc[0]
 
-    grade_id = row["grade_id"]
+        grade_id = row["grade_id"]
 
         score_e = st.number_input("Note", 0.0, 20.0, float(row["score"]), key="edit_score")
 
