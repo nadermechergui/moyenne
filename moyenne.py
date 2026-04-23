@@ -1488,77 +1488,77 @@ def staff_work_center():
 # 📊 NOTES DU STAGIAIRE
 # =========================
 
-st.markdown("### 📊 Notes du stagiaire sélectionné")
+    st.markdown("### 📊 Notes du stagiaire sélectionné")
 
-gr_all = read_df("Grades")
+    gr_all = read_df("Grades")
 
-gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
+    gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
 
-gr_view = gr_all[
-    (gr_all["trainee_id"] == trainee_id) &
-    (gr_all["branch"].astype(str).str.strip() == staff_branch) &
-    (gr_all["program"].astype(str).str.strip() == norm(program)) &
-    (gr_all["group"].astype(str).str.strip() == norm(group))
-].copy()
+    gr_view = gr_all[
+        (gr_all["trainee_id"] == trainee_id) &
+        (gr_all["branch"].astype(str).str.strip() == staff_branch) &
+        (gr_all["program"].astype(str).str.strip() == norm(program)) &
+        (gr_all["group"].astype(str).str.strip() == norm(group))
+    ].copy()
 
-if gr_view.empty:
-    st.info("⚠️ ما فما حتى note لهالمتربص.")
-else:
-    st.dataframe(
-        gr_view[["subject_name","exam_type","score","date","note"]],
-        use_container_width=True,
-        hide_index=True
+    if gr_view.empty:
+        st.info("⚠️ ما فما حتى note لهالمتربص.")
+    else:
+        st.dataframe(
+            gr_view[["subject_name","exam_type","score","date","note"]],
+            use_container_width=True,
+            hide_index=True
     )
 
 # =========================
 # ➕ AJOUT NOTE (ديما يخدم)
 # =========================
 
-st.divider()
-st.markdown("### ➕ Ajouter une note")
+    st.divider()
+    st.markdown("### ➕ Ajouter une note")
 
-subjects = sub["subject_name"].dropna().unique().tolist()
+    subjects = sub["subject_name"].dropna().unique().tolist()
 
-subject_name = st.selectbox("📚 Matière", subjects, key="add_sub")
-exam_type = st.selectbox("🎯 Type", ["Examen","Contrôle","Oral"], key="add_exam")
-score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
-d = st.date_input("Date", key="add_date")
-note = st.text_area("Remarque", key="add_note")
+    subject_name = st.selectbox("📚 Matière", subjects, key="add_sub")
+    exam_type = st.selectbox("🎯 Type", ["Examen","Contrôle","Oral"], key="add_exam")
+    score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
+    d = st.date_input("Date", key="add_date")
+    note = st.text_area("Remarque", key="add_note")
 
-if st.button("➕ Ajouter", key="add_btn"):
+    if st.button("➕ Ajouter", key="add_btn"):
 
-    append_row("Grades", {
-        "grade_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
-        "trainee_id": trainee_id,
-        "branch": staff_branch,
-        "program": norm(program),
-        "group": norm(group),
-        "subject_name": subject_name,
-        "exam_type": exam_type,
-        "score": str(score),
-        "date": str(d),
-        "note": note,
-        "staff_name": staff_name,
-        "created_at": now_str(),
+        append_row("Grades", {
+            "grade_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
+            "trainee_id": trainee_id,
+            "branch": staff_branch,
+            "program": norm(program),
+            "group": norm(group),
+            "subject_name": subject_name,
+            "exam_type": exam_type,
+            "score": str(score),
+            "date": str(d),
+            "note": note,
+            "staff_name": staff_name,
+            "created_at": now_str(),
     })
 
-    st.success("✅ Note ajoutée")
-    st.rerun()
+        st.success("✅ Note ajoutée")
+        st.rerun()
 
 # =========================
 # ✏️ MODIFIER NOTE
 # =========================
 
-if not gr_view.empty:
+    if not gr_view.empty:
 
-    st.divider()
-    st.markdown("### ✏️ Modifier note")
+        st.divider()
+        st.markdown("### ✏️ Modifier note")
 
-    gr_view["label"] = (
-        gr_view["subject_name"] + " | " +
-        gr_view["exam_type"] + " | " +
-        gr_view["score"].astype(str) + " | " +
-        gr_view["date"]
+        gr_view["label"] = (
+            gr_view["subject_name"] + " | " +
+            gr_view["exam_type"] + " | " +
+            gr_view["score"].astype(str) + " | " +
+            gr_view["date"]
     )
 
     selected = st.selectbox("اختر note", gr_view["label"], key="edit_select")
@@ -1567,16 +1567,16 @@ if not gr_view.empty:
 
     grade_id = row["grade_id"]
 
-    score_e = st.number_input("Note", 0.0, 20.0, float(row["score"]), key="edit_score")
+        score_e = st.number_input("Note", 0.0, 20.0, float(row["score"]), key="edit_score")
 
-    if st.button("💾 Sauvegarder", key="edit_btn"):
+        if st.button("💾 Sauvegarder", key="edit_btn"):
 
-        update_grade_row(grade_id, {
-            "score": str(score_e)
+            update_grade_row(grade_id, {
+                "score": str(score_e)
         })
 
-        st.success("✅ تم التعديل")
-        st.rerun()
+            st.success("✅ تم التعديل")
+            st.rerun()
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
