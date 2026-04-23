@@ -1552,9 +1552,7 @@ def staff_work_center():
                     })
                     st.success("✅ Note enregistrée.")
                     st.rerun()
-            st.divider()
-            # =========================
-# ➕ Ajouter note
+            # ➕ Ajouter note
 # =========================
 
             st.markdown("### ➕ Ajouter une note")
@@ -1588,6 +1586,9 @@ def staff_work_center():
 
                 st.success("✅ تم إضافة note")
                 st.rerun()
+            st.divider()
+            # =========================
+
             # =========================
             
 # ✏️ MODIFIER NOTE
