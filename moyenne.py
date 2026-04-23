@@ -1555,6 +1555,69 @@ def staff_work_center():
 
             st.divider()
             # =========================
+            
+# ✏️ MODIFIER NOTE
+# =========================
+
+            st.markdown("### ✏️ Modifier note")
+
+# نفس المتربص المختار
+            gr_edit = gr_view.copy()
+
+            if gr_edit.empty:
+                st.info("⚠️ ما فما حتى note للتعديل")
+            else:
+                gr_edit["subject_name"] = gr_edit["subject_name"].astype(str).str.strip()
+
+                 subjects = gr_edit["subject_name"].unique().tolist()
+
+                selected_subject = st.selectbox("📚 Matière", subjects, key="edit_subject")
+
+                df_sub = gr_edit[gr_edit["subject_name"] == selected_subject]
+
+                df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
+                types = df_sub["exam_type"].unique().tolist()
+
+                selected_type = st.selectbox("🎯 Type", types, key="edit_type")
+
+                df_final = df_sub[df_sub["exam_type"] == selected_type]
+
+                row = df_final.sort_values(by="date", ascending=False).iloc[0].to_dict()
+
+                grade_id = str(row.get("grade_id")).strip()
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.text_input("Matière", value=row["subject_name"], disabled=True)
+                    st.text_input("Type", value=row["exam_type"], disabled=True)
+
+                    score_e = st.number_input(
+                        "Note",
+                        min_value=0.0,
+                        max_value=20.0,
+                        value=float(row.get("score") or 0),
+                        step=0.25,
+                        key="edit_score"
+        )
+
+                with col2:
+                    date_e = st.date_input("Date", key="edit_date")
+                    note_e = st.text_area("Remarque", value=row.get("note"), key="edit_note")
+
+                if st.button("💾 Sauvegarder", key="edit_save_btn"):
+
+                    ok = update_grade_row(grade_id, {
+                        "score": str(score_e),
+                        "date": str(date_e),
+                        "note": note_e
+        })
+
+                    if ok:
+                        st.success("✅ تم التعديل")
+                        st.rerun()
+                    else:
+                        st.error("❌ مشكل في التعديل")
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
