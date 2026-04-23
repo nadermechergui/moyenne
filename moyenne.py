@@ -1554,6 +1554,41 @@ def staff_work_center():
                     st.rerun()
             st.divider()
             # =========================
+# ➕ Ajouter note
+# =========================
+
+            st.markdown("### ➕ Ajouter une note")
+
+# نفس المتربص المختار فوق
+# لازم يكون عندك trainee_id موجود
+
+            subjects_list = sub["subject_name"].dropna().unique().tolist()
+
+            new_subject = st.selectbox("📚 Matière", subjects_list, key="new_subject")
+
+            new_type = st.selectbox("🎯 Type", ["Examen", "Contrôle", "Oral"], key="new_type")
+
+            new_score = st.number_input("Note", min_value=0.0, max_value=20.0, step=0.25, key="new_score")
+
+            new_date = st.date_input("Date", key="new_date")
+
+            new_note = st.text_area("Remarque", key="new_note")
+
+            if st.button("➕ Ajouter", key="add_note_btn"):
+
+                add_grade_row({
+                    "trainee_id": trainee_id,
+                    "subject_name": new_subject,
+                    "exam_type": new_type,
+                    "score": str(new_score),
+                    "date": str(new_date),
+                    "note": new_note,
+                    "staff_name": staff_name
+                })
+
+                st.success("✅ تم إضافة note")
+                st.rerun()
+            # =========================
             
 # ✏️ MODIFIER NOTE
 # =========================
