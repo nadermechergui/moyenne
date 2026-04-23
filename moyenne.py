@@ -1638,7 +1638,7 @@ def staff_work_center():
                     else:
                         st.error("❌ Échec (grade_id introuvable).")
             
-            if st.button("💾 Sauvegarder", key="save_edit_btn")):
+            if st.button("💾 Sauvegarder", key="save_edit_btn"):
 
                 ok = update_grade_row(grade_id, {
                     "score": str(score_e),
