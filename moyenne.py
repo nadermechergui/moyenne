@@ -1567,8 +1567,13 @@ def staff_work_center():
 
         grade_id = row["grade_id"]
 
-        score_e = st.number_input("Note", 0.0, 20.0, float(row["score"]), key="edit_score")
-
+        score_e = st.number_input(
+            "Note",
+            0.0,
+            20.0,
+            float(row.get("score") or 0),
+            key="edit_score"
+)
         if st.button("💾 Sauvegarder", key="edit_btn"):
 
             update_grade_row(grade_id, {
