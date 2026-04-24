@@ -981,7 +981,7 @@ def student_portal_center():
 
         with t1:
             gr = read_df("Grades")
-
+            st.write(gr[["trainee_id", "subject_name", "trimestre"]])
     # 🔥 اختيار التريماستر
             selected_trim = st.selectbox(
                 "📅 Choisir Trimestre",
