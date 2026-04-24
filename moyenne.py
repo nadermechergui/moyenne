@@ -223,7 +223,15 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
 
     if weak_all:
         c.setFillColor(colors.red)
-        c.drawString(2*cm, y, "Crédit: " + ", ".join(weak_all))
+        text = "Crédit: " + ", ".join(weak_all)
+
+        max_chars = 60  # طول السطر
+        lines = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+
+        c.setFillColor(colors.red)
+        for line in lines:
+            c.drawString(2*cm, y, line)
+            y -= 0.5*cm
     else:
         c.setFillColor(colors.green)
         c.drawString(2*cm, y, "Aucun crédit")
