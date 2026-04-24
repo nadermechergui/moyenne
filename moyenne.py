@@ -1550,13 +1550,12 @@ def staff_work_center():
         st.rerun()
 
 # =========================
-# ✏️ MODIFIER NOTE (قديم)
+# ✏️ MODIFIER NOTE (Simple)
 # =========================
 
-    st.divider()
     st.markdown("### ✏️ Modifier note")
 
-# اختيار المتربص
+# 1) اختيار المتكون
     tr["label"] = tr["full_name"] + " — " + tr["trainee_id"]
 
     selected_tr = st.selectbox("👤 Stagiaire", tr["label"], key="mod_tr")
@@ -1564,7 +1563,7 @@ def staff_work_center():
     trainee_id_mod = tr[tr["label"] == selected_tr].iloc[0]["trainee_id"]
     trainee_id_mod = str(trainee_id_mod).strip()
 
-# فلترة notes
+# 2) نجيب النوطات متاعو
     gr_all = read_df("Grades")
     gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
 
@@ -1573,32 +1572,59 @@ def staff_work_center():
     if df_tr.empty:
         st.info("⚠️ ما فما حتى note")
     else:
-        df_tr["exam_type"] = df_tr["exam_type"].astype(str).str.strip()
+    # 3) اختيار المادة
+        df_tr["subject_name"] = df_tr["subject_name"].astype(str).str.strip()
 
-        types = df_tr["exam_type"].unique().tolist()
+        subjects = df_tr["subject_name"].unique().tolist()
 
-        selected_type = st.selectbox("🎯 Type examen", types, key="mod_type")
+        selected_subject = st.selectbox("📚 Matière", subjects, key="mod_subject")
 
-        df_type = df_tr[df_tr["exam_type"] == selected_type]
+        df_sub = df_tr[df_tr["subject_name"] == selected_subject]
 
-    # ناخذ آخر note
-        row = df_type.sort_values(by="date", ascending=False).iloc[0]
+    # 4) اختيار النوع
+        df_sub["exam_type"] = df_sub["exam_type"].astype(str).str.strip()
 
-        grade_id = row["grade_id"]
+        types = df_sub["exam_type"].unique().tolist()
 
-    # فورم
-        score_default = float(row.get("score") or 0)
+        selected_type = st.selectbox(
+            "🎯 Type",
+            ["Examen", "CC1", "CC2", "CC3", "Orale", "Test", "Exposé"],
+            key="mod_type"
+    )
 
-        score_e = st.number_input("Note", 0.0, 20.0, score_default, key="mod_score")
+        df_type = df_sub[df_sub["exam_type"] == selected_type]
 
-        if st.button("💾 Modifier", key="mod_btn"):
+        if df_type.empty:
+            st.warning("ما فماش note لهالمادة و النوع")
+        else:
+        # ناخذ آخر note
+            row = df_type.sort_values(by="date", ascending=False).iloc[0]
 
-            update_grade_row(grade_id, {
-                "score": str(score_e)
+            grade_id = row["grade_id"]
+
+        # 5) الفورم
+            try:
+                score_default = float(row.get("score") or 0)
+            except:
+                score_default = 0.0
+
+            score_e = st.number_input(
+                "Note",
+                0.0, 20.0,
+                score_default,
+                step=0.25,
+                key="mod_score"
+        )
+
+        # 6) SAVE
+            if st.button("💾 Modifier", key="mod_btn"):
+
+                update_grade_row(grade_id, {
+                    "score": str(score_e)
             })
 
-            st.success("✅ تم التعديل")
-            st.rerun()   
+                st.success("✅ تم التعديل")
+                st.rerun()   
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
