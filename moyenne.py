@@ -1522,7 +1522,7 @@ def staff_work_center():
     subject_name = st.selectbox("📚 Matière", subjects, key="add_sub")
     exam_type = st.selectbox(
         "🎯 Type",
-        ["Examen", "CC1", "CC2", "CC3", "Orale", "Test", "Exposé"],
+        ["Examen", "CC1", "CC2", "CC3", "Oral", "Test", "Exposé"],
         key="add_exam"
     )    
     score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
@@ -1588,7 +1588,7 @@ def staff_work_center():
 
         selected_type = st.selectbox(
             "🎯 Type",
-            ["Examen", "CC1", "CC2", "CC3", "Orale", "Test", "Exposé"],
+            ["Examen", "CC1", "CC2", "CC3", "Oral", "Test", "Exposé"],
             key="mod_type"
     )
 
