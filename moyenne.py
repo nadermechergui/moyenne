@@ -1472,7 +1472,7 @@ def staff_work_center():
                     df_result = pd.DataFrame(results)
 
                     st.dataframe(df_result, use_container_width=True)
-                    st.success(f"🎯 Moyenne Générale: {round(moyenne, 2)} / 20")
+                    st.success(f"🎯 Moyenne Générale: {round(float(moyenne), 2)} / 20")
                     # 🖨️ BOUTON ICI
                     import os
 
