@@ -981,17 +981,37 @@ def student_portal_center():
 
         with t1:
             gr = read_df("Grades")
+
+    # 🔥 اختيار التريماستر
+            selected_trim = st.selectbox(
+                "📅 Choisir Trimestre",
+                ["T1", "T2"],
+                key="filter_trim_stagiaire"
+    )
+
             if "trainee_id" not in gr.columns:
                 gr["trainee_id"] = ""
-            grf = gr[gr["trainee_id"].astype(str).str.strip() == trainee_id].copy() if not gr.empty else pd.DataFrame()
+
+            if "trimestre" not in gr.columns:
+                gr["trimestre"] = ""  # باش ما يطيحش error
+
+    # 🔥 فلترة حسب المتكون + التريماستر
+            grf = gr[
+                (gr["trainee_id"].astype(str).str.strip() == trainee_id) &
+                (gr["trimestre"].astype(str).str.strip() == selected_trim)
+            ].copy() if not gr.empty else pd.DataFrame()
+
             if grf.empty:
-                st.info("Aucune note pour le moment.")
+                st.info("Aucune note pour ce trimestre.")
             else:
                 for c in ["date", "created_at"]:
                     if c not in grf.columns:
                         grf[c] = ""
+
                 grf = grf.sort_values(by=["date", "created_at"], ascending=False)
+
                 cols_show = [c for c in ["subject_name", "exam_type", "score", "date", "staff_name", "note"] if c in grf.columns]
+
                 st.dataframe(grf[cols_show], use_container_width=True, hide_index=True)
 
 # 🔥 حساب المعدلات كيف staff
@@ -1592,6 +1612,7 @@ def staff_work_center():
             "score": str(score),
             "date": str(d),
             "note": note,
+            "trimestre": trimestre,
             "staff_name": staff_name,
             "created_at": now_str(),
     })
