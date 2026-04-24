@@ -1034,7 +1034,7 @@ def student_portal_center():
 
                     results.append({
                         "Matière": subject,
-                        "Final": round(final, 2)
+                        "Final": round(final, 2),
                         "Coef": coef
                     })
 
