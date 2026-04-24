@@ -1035,6 +1035,7 @@ def student_portal_center():
                     results.append({
                         "Matière": subject,
                         "Final": round(final, 2)
+                        "Coef": coef
                     })
 
                 df_result = pd.DataFrame(results)
