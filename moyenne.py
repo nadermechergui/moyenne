@@ -34,13 +34,15 @@ import pandas as pd
 from io import BytesIO
 def compute_credit(df_result):
 
+    if "Coef" not in df_result.columns:
+        return []  # ما يعمل حتى error
+
     coef1 = df_result[df_result["Coef"] == 1]
     coef3 = df_result[df_result["Coef"] == 3]
 
     weak_coef1 = []
     if not coef1.empty:
         moy_coef1 = coef1["Final"].mean()
-
         if moy_coef1 < 10:
             weak_coef1 = coef1[coef1["Final"] < 10]["Matière"].tolist()
 
