@@ -1043,6 +1043,11 @@ def student_portal_center():
                 # 🎯 moyenne générale
                 if total_coef > 0:
                     moyenne = total / total_coef
+                st.markdown(f"""
+                <div style="background:#e6f2ff;padding:15px;border-radius:10px">
+                <h3 style="color:blue;">🎯 Moyenne Générale: {round(moyenne,2)} / 20</h3>
+                </div>
+                """, unsafe_allow_html=True)    
 
                     weak_all = compute_credit(df_result)
 
