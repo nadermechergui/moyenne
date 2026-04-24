@@ -32,7 +32,23 @@ from reportlab.lib import colors
 import qrcode
 import pandas as pd
 from io import BytesIO
+def compute_credit(df_result):
 
+    coef1 = df_result[df_result["Coef"] == 1]
+    coef3 = df_result[df_result["Coef"] == 3]
+
+    weak_coef1 = []
+    if not coef1.empty:
+        moy_coef1 = coef1["Final"].mean()
+
+        if moy_coef1 < 10:
+            weak_coef1 = coef1[coef1["Final"] < 10]["Matière"].tolist()
+
+    weak_coef3 = []
+    if not coef3.empty:
+        weak_coef3 = coef3[coef3["Final"] < 10]["Matière"].tolist()
+
+    return weak_coef1 + weak_coef3
 def generate_excel_template(trainee_id, subjects):
     data = []
 
@@ -195,6 +211,22 @@ def generate_bulletin_pdf(file_path, name, program, group, year, df_result, moye
     c.setFont("Helvetica", 10)
     c.drawString(12*cm, y, "Signature")
     c.line(12*cm, y - 0.2*cm, 17*cm, y - 0.2*cm)
+    # =========================
+# 🚨 CREDIT PDF (هنا)
+# =========================
+
+    weak_all = compute_credit(df_result)
+
+    y -= 1*cm
+
+    c.setFont("Helvetica-Bold", 12)
+
+    if weak_all:
+        c.setFillColor(colors.red)
+        c.drawString(2*cm, y, "Crédit: " + ", ".join(weak_all))
+    else:
+        c.setFillColor(colors.green)
+        c.drawString(2*cm, y, "Aucun crédit")
     # ===== QR CODE =====
     try:
     # 🔗 الرابط اللي باش يتحل
@@ -1001,21 +1033,15 @@ def student_portal_center():
                 if total_coef > 0:
                     moyenne = total / total_coef
 
-                    weak = df_result[df_result["Final"] < 10]
+                    weak_all = compute_credit(df_result)
 
-                    st.markdown(f"""
-                    <div style="background:#ffe6e6;padding:15px;border-radius:10px">
-                    <h3 style="color:red;">📊 Moyenne Générale: {round(moyenne, 2)} / 20</h3>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    if not weak.empty:
-                        subjects = ", ".join(weak["Matière"].astype(str))
-
+                    if weak_all:
                         st.markdown(f"""
                         <div style="background:#ffcccc;padding:15px;border-radius:10px">
-                        <h4 style="color:red;">❌ Crédit (moins de 10):</h4>
-                        <p style="color:red;font-weight:bold;">{subjects}</p>
+                        <h4 style="color:red;">❌ Crédit:</h4>
+                        <p style="color:red;font-weight:bold;">
+                        {", ".join(weak_all)}
+                        </p>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
@@ -1464,21 +1490,22 @@ def staff_work_center():
                         moyenne = total / total_coef
 
     # 🔴 المواد الضعيفة (Final < 10)
-                        weak = df_result[df_result["Final"] < 10]
+                        weak_all = compute_credit(df_result)
 
-                        st.markdown(f"""
-                        <div style="background:#ffe6e6;padding:15px;border-radius:10px">
-                        <h3 style="color:red;">📊 Moyenne Générale: {round(moyenne, 2)} / 20</h3>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        if not weak.empty:
-                            subjects = ", ".join(weak["Matière"].astype(str))
+                        if weak_all:
+                            subjects = ", ".join(weak_all)
 
                             st.markdown(f"""
                             <div style="background:#ffcccc;padding:15px;border-radius:10px">
-                            <h4 style="color:red;">❌ Matières faibles (moins de 10):</h4>
+                            <h4 style="color:red;">❌ Crédit:</h4>
                             <p style="color:red;font-weight:bold;">{subjects}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        else:
+                            st.markdown("""
+                            <div style="background:#e6ffe6;padding:15px;border-radius:10px">
+                            <h4 style="color:green;">✅ Aucun crédit 🎉</h4>
                             </div>
                             """, unsafe_allow_html=True)        
             # ============================
