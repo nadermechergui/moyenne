@@ -1049,7 +1049,7 @@ def student_portal_center():
                 </div>
                 """, unsafe_allow_html=True)    
 
-                    weak_all = compute_credit(df_result)
+                weak_all = compute_credit(df_result)
 
                     if weak_all:
                         st.markdown(f"""
