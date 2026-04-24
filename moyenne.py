@@ -1051,21 +1051,21 @@ def student_portal_center():
 
                 weak_all = compute_credit(df_result)
 
-                    if weak_all:
-                        st.markdown(f"""
-                        <div style="background:#ffcccc;padding:15px;border-radius:10px">
-                        <h4 style="color:red;">❌ Crédit:</h4>
-                        <p style="color:red;font-weight:bold;">
-                        {", ".join(weak_all)}
-                        </p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div style="background:#e6ffe6;padding:15px;border-radius:10px">
-                        <h4 style="color:green;">✅ Bravo! Aucun crédit 🎉</h4>
-                        </div>
-                        """, unsafe_allow_html=True)
+                if weak_all:
+                    st.markdown(f"""
+                    <div style="background:#ffcccc;padding:15px;border-radius:10px">
+                    <h4 style="color:red;">❌ Crédit:</h4>
+                    <p style="color:red;font-weight:bold;">
+                    {", ".join(weak_all)}
+                    </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="background:#e6ffe6;padding:15px;border-radius:10px">
+                    <h4 style="color:green;">✅ Bravo! Aucun crédit 🎉</h4>
+                    </div>
+                    """, unsafe_allow_html=True)
 
         with t2:
             y_default = today_year_str()
