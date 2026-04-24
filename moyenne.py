@@ -1520,7 +1520,11 @@ def staff_work_center():
     subjects = sub["subject_name"].dropna().unique().tolist()
 
     subject_name = st.selectbox("📚 Matière", subjects, key="add_sub")
-    exam_type = st.selectbox("🎯 Type", ["Examen","Contrôle","Oral"], key="add_exam")
+    exam_type = st.selectbox(
+        "🎯 Type",
+        ["Examen", "CC1", "CC2", "CC3", "Orale", "Test", "Exposé"],
+        key="add_exam"
+    )    
     score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
     d = st.date_input("Date", key="add_date")
     note = st.text_area("Remarque", key="add_note")
@@ -1546,42 +1550,55 @@ def staff_work_center():
         st.rerun()
 
 # =========================
-# ✏️ MODIFIER NOTE
+# ✏️ MODIFIER NOTE (قديم)
 # =========================
 
-    if not gr_view.empty:
+    st.divider()
+    st.markdown("### ✏️ Modifier note")
 
-        st.divider()
-        st.markdown("### ✏️ Modifier note")
+# اختيار المتربص
+    tr["label"] = tr["full_name"] + " — " + tr["trainee_id"]
 
-        gr_view["label"] = (
-            gr_view["subject_name"] + " | " +
-            gr_view["exam_type"] + " | " +
-            gr_view["score"].astype(str) + " | " +
-            gr_view["date"]
-    )
+    selected_tr = st.selectbox("👤 Stagiaire", tr["label"], key="mod_tr")
 
-        selected = st.selectbox("اختر note", gr_view["label"], key="edit_select")
+    trainee_id_mod = tr[tr["label"] == selected_tr].iloc[0]["trainee_id"]
+    trainee_id_mod = str(trainee_id_mod).strip()
 
-        row = gr_view[gr_view["label"] == selected].iloc[0]
+# فلترة notes
+    gr_all = read_df("Grades")
+    gr_all["trainee_id"] = gr_all["trainee_id"].astype(str).str.strip()
+
+    df_tr = gr_all[gr_all["trainee_id"] == trainee_id_mod].copy()
+
+    if df_tr.empty:
+        st.info("⚠️ ما فما حتى note")
+    else:
+        df_tr["exam_type"] = df_tr["exam_type"].astype(str).str.strip()
+
+        types = df_tr["exam_type"].unique().tolist()
+
+        selected_type = st.selectbox("🎯 Type examen", types, key="mod_type")
+
+        df_type = df_tr[df_tr["exam_type"] == selected_type]
+
+    # ناخذ آخر note
+        row = df_type.sort_values(by="date", ascending=False).iloc[0]
 
         grade_id = row["grade_id"]
 
-        score_e = st.number_input(
-            "Note",
-            0.0,
-            20.0,
-            float(row.get("score") or 0),
-            key="edit_score"
-)
-        if st.button("💾 Sauvegarder", key="edit_btn"):
+    # فورم
+        score_default = float(row.get("score") or 0)
+
+        score_e = st.number_input("Note", 0.0, 20.0, score_default, key="mod_score")
+
+        if st.button("💾 Modifier", key="mod_btn"):
 
             update_grade_row(grade_id, {
                 "score": str(score_e)
-        })
+            })
 
             st.success("✅ تم التعديل")
-            st.rerun()
+            st.rerun()   
 # 🔥 NEW EDIT SYSTEM
 # =========================
 
