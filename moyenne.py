@@ -1010,7 +1010,7 @@ def student_portal_center():
 
                 grf = grf.sort_values(by=["date", "created_at"], ascending=False)
 
-                cols_show = [c for c in ["subject_name", "exam_type", "score", "date", "staff_name", "note"] if c in grf.columns]
+                cols_show = [c for c in ["subject_name", "exam_type", "score", "date","trimestre","staff_name", "note"] if c in grf.columns]
 
                 st.dataframe(grf[cols_show], use_container_width=True, hide_index=True)
 
