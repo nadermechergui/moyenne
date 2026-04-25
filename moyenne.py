@@ -1588,7 +1588,11 @@ def staff_work_center():
     score = st.number_input("Note", 0.0, 20.0, 10.0, 0.25, key="add_score")
     d = st.date_input("Date", key="add_date")
     note = st.text_area("Remarque", key="add_note")
-
+    trimestre = st.selectbox(
+        "📅 Trimestre",
+        ["T1", "T2"],
+        key="add_trim_staff"
+    )
     if st.button("➕ Ajouter", key="add_btn"):
 
         append_row("Grades", {
