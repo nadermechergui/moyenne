@@ -1047,7 +1047,7 @@ def student_portal_center():
 
                     final = (moyenne_ctrl * 0.4) + (exam_score * 0.6)
 
-                     coef_row = df_sub[df_sub["subject_name"] == subject]
+                    coef_row = df_sub[df_sub["subject_name"] == subject]
                     coef = float(coef_row.iloc[0].get("coefficient", 1)) if not coef_row.empty else 1
 
                     total += final * coef
