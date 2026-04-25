@@ -981,40 +981,43 @@ def student_portal_center():
 
         with t1:
             gr = read_df("Grades")
-            st.write(gr[["trainee_id", "subject_name", "trimestre"]])
-    # 🔥 اختيار التريماستر
+
+    # 🎯 اختيار التريماستر
             selected_trim = st.selectbox(
                 "📅 Choisir Trimestre",
                 ["T1", "T2"],
                 key="filter_trim_stagiaire"
-    )
+        )
 
             if "trainee_id" not in gr.columns:
                 gr["trainee_id"] = ""
 
             if "trimestre" not in gr.columns:
-                gr["trimestre"] = ""  # باش ما يطيحش error
+                gr["trimestre"] = ""
 
-    # 🔥 فلترة حسب المتكون + التريماستر
+    # 🔥 فلترة صحيحة
             grf = gr[
                 (gr["trainee_id"].astype(str).str.strip() == trainee_id) &
-                (gr["trimestre"].astype(str).str.strip() == selected_trim)
-            ].copy() if not gr.empty else pd.DataFrame()
+                (gr["trimestre"].astype(str).str.strip().str.upper() == selected_trim)
+             ].copy()
 
             if grf.empty:
                 st.info("Aucune note pour ce trimestre.")
             else:
-                for c in ["date", "created_at"]:
-                    if c not in grf.columns:
-                        grf[c] = ""
+        # 🎯 ترتيب
+                grf = grf.sort_values(by=["date"], ascending=False)
 
-                grf = grf.sort_values(by=["date", "created_at"], ascending=False)
-
-                cols_show = [c for c in ["subject_name", "exam_type", "score", "date","trimestre","staff_name", "note"] if c in grf.columns]
+        # 🎯 عرض النوطات (كيما قبل)
+                cols_show = [
+                    c for c in ["subject_name", "exam_type", "score", "date", "note"]
+                    if c in grf.columns
+                ]
 
                 st.dataframe(grf[cols_show], use_container_width=True, hide_index=True)
 
-# 🔥 حساب المعدلات كيف staff
+        # =========================
+        # 🔥 حساب moyenne + crédit
+        # =========================
 
                 df = grf.copy()
 
@@ -1023,7 +1026,7 @@ def student_portal_center():
                     errors="coerce"
                 )
 
-                df = df.dropna(subset=["note"])
+                 df = df.dropna(subset=["note"])
                 df["exam_type"] = df["exam_type"].astype(str).str.strip()
 
                 results = []
@@ -1044,12 +1047,10 @@ def student_portal_center():
 
                     final = (moyenne_ctrl * 0.4) + (exam_score * 0.6)
 
-                    coef_row = df_sub[df_sub["subject_name"] == subject]
+                     coef_row = df_sub[df_sub["subject_name"] == subject]
                     coef = float(coef_row.iloc[0].get("coefficient", 1)) if not coef_row.empty else 1
 
-                    weighted = final * coef
-
-                    total += weighted
+                    total += final * coef
                     total_coef += coef
 
                     results.append({
@@ -1060,34 +1061,21 @@ def student_portal_center():
 
                 df_result = pd.DataFrame(results)
 
-                # 🎯 moyenne générale
+        # 🎯 moyenne
                 if total_coef > 0:
-                    moyenne = total / total_coef  
+                    moyenne = total / total_coef
                 else:
-                    moyenne = 0    
-                st.markdown(f"""
-                <div style="background:#e6f2ff;padding:15px;border-radius:10px">
-                <h3 style="color:blue;">🎯 Moyenne Générale: {round(moyenne,2)} / 20</h3>
-                </div>
-                """, unsafe_allow_html=True)    
+                    moyenne = 0
 
+                st.success(f"🎯 Moyenne Générale: {round(moyenne, 2)} / 20")
+
+        # 🎯 crédit
                 weak_all = compute_credit(df_result)
 
                 if weak_all:
-                    st.markdown(f"""
-                    <div style="background:#ffcccc;padding:15px;border-radius:10px">
-                    <h4 style="color:red;">❌ Crédit:</h4>
-                    <p style="color:red;font-weight:bold;">
-                    {", ".join(weak_all)}
-                    </p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.error("❌ Crédit: " + ", ".join(weak_all))
                 else:
-                    st.markdown("""
-                    <div style="background:#e6ffe6;padding:15px;border-radius:10px">
-                    <h4 style="color:green;">✅ Bravo! Aucun crédit 🎉</h4>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.success("✅ Bravo! Aucun crédit 🎉")
 
         with t2:
             y_default = today_year_str()
