@@ -1026,7 +1026,7 @@ def student_portal_center():
                     errors="coerce"
                 )
 
-                 df = df.dropna(subset=["note"])
+                df = df.dropna(subset=["note"])
                 df["exam_type"] = df["exam_type"].astype(str).str.strip()
 
                 results = []
